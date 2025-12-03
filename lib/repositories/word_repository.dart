@@ -15,4 +15,8 @@ class WordRepository {
   Future<void> deleteWord(int index) async {
     await _box.deleteAt(index);
   }
+
+  Future<void> updateWord(int index, Word word) async {
+    await _box.putAt(index, word);
+  }
 }

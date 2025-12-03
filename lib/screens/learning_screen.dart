@@ -55,73 +55,96 @@ class _LearningScreenState extends State<LearningScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Learning Mode')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Translate this to English:',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              widget.word.meaningVi,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.blue,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _controller,
-              decoration: InputDecoration(
-                labelText: 'Type English word',
-                border: const OutlineInputBorder(),
-                errorText: _isCorrect == false ? 'Incorrect, try again!' : null,
-              ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(onPressed: _checkAnswer, child: const Text('Check')),
-            const SizedBox(height: 30),
-            if (_showDetails) ...[
-              const Divider(),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    widget.word.word,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.volume_up),
-                    onPressed: _speak,
-                  ),
-                ],
-              ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Text(
-                widget.word.ipa,
+                'Translate this to English:',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                widget.word.meaningVi,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontStyle: FontStyle.italic),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'Example:',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              TextField(
+                controller: _controller,
+                decoration: InputDecoration(
+                  labelText: 'Type English word',
+                  border: const OutlineInputBorder(),
+                  errorText: _isCorrect == false
+                      ? 'Incorrect, try again!'
+                      : null,
+                ),
               ),
-              Text(widget.word.exampleEn),
-              Text(
-                widget.word.exampleVi,
-                style: const TextStyle(color: Colors.grey),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _checkAnswer,
+                child: const Text('Check'),
               ),
+              const SizedBox(height: 30),
+              if (_showDetails) ...[
+                const Divider(),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      widget.word.word,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.volume_up),
+                      onPressed: _speak,
+                    ),
+                  ],
+                ),
+                Text(
+                  widget.word.ipa,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                ),
+                const SizedBox(height: 20),
+                const SizedBox(height: 20),
+                const Text(
+                  'Examples:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                ...widget.word.examplesEn.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final exEn = entry.value;
+                  final exVi = widget.word.examplesVi.length > index
+                      ? widget.word.examplesVi[index]
+                      : '';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('- $exEn'),
+                        Text(
+                          '  $exVi',
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

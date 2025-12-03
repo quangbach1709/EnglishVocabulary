@@ -164,15 +164,31 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 style: const TextStyle(fontStyle: FontStyle.italic),
               ),
               const SizedBox(height: 20),
+              const SizedBox(height: 20),
               const Text(
-                'Example:',
+                'Examples:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              Text(currentWord.exampleEn),
-              Text(
-                currentWord.exampleVi,
-                style: const TextStyle(color: Colors.grey),
-              ),
+              ...currentWord.examplesEn.asMap().entries.map((entry) {
+                final index = entry.key;
+                final exEn = entry.value;
+                final exVi = currentWord.examplesVi.length > index
+                    ? currentWord.examplesVi[index]
+                    : '';
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('- $exEn'),
+                      Text(
+                        '  $exVi',
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                );
+              }),
               const SizedBox(height: 30),
               ElevatedButton(
                 onPressed: _nextWord,

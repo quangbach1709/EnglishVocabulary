@@ -14,17 +14,17 @@ class Word extends HiveObject {
   final String meaningVi;
 
   @HiveField(3)
-  final String exampleEn;
+  final List<String> examplesEn;
 
   @HiveField(4)
-  final String exampleVi;
+  final List<String> examplesVi;
 
   Word({
     required this.word,
     required this.ipa,
     required this.meaningVi,
-    required this.exampleEn,
-    required this.exampleVi,
+    required this.examplesEn,
+    required this.examplesVi,
   });
 
   factory Word.fromJson(Map<String, dynamic> json) {
@@ -32,8 +32,16 @@ class Word extends HiveObject {
       word: json['word'] ?? '',
       ipa: json['ipa'] ?? '',
       meaningVi: json['meaning_vi'] ?? '',
-      exampleEn: json['example_en'] ?? '',
-      exampleVi: json['example_vi'] ?? '',
+      examplesEn:
+          (json['examples_en'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      examplesVi:
+          (json['examples_vi'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
     );
   }
 
@@ -42,8 +50,8 @@ class Word extends HiveObject {
       'word': word,
       'ipa': ipa,
       'meaning_vi': meaningVi,
-      'example_en': exampleEn,
-      'example_vi': exampleVi,
+      'examples_en': examplesEn,
+      'examples_vi': examplesVi,
     };
   }
 }

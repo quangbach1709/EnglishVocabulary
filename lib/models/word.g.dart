@@ -20,8 +20,8 @@ class WordAdapter extends TypeAdapter<Word> {
       word: fields[0] as String,
       ipa: fields[1] as String,
       meaningVi: fields[2] as String,
-      exampleEn: fields[3] as String,
-      exampleVi: fields[4] as String,
+      examplesEn: (fields[3] as List).cast<String>(),
+      examplesVi: (fields[4] as List).cast<String>(),
     );
   }
 
@@ -36,9 +36,9 @@ class WordAdapter extends TypeAdapter<Word> {
       ..writeByte(2)
       ..write(obj.meaningVi)
       ..writeByte(3)
-      ..write(obj.exampleEn)
+      ..write(obj.examplesEn)
       ..writeByte(4)
-      ..write(obj.exampleVi);
+      ..write(obj.examplesVi);
   }
 
   @override

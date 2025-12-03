@@ -4,6 +4,7 @@ import '../providers/word_provider.dart';
 import 'add_word_screen.dart';
 import 'learning_screen.dart';
 import 'review_screen.dart';
+import 'edit_word_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -47,11 +48,28 @@ class HomeScreen extends StatelessWidget {
               return ListTile(
                 title: Text(word.word),
                 subtitle: Text(word.meaningVi),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () {
-                    provider.deleteWord(index);
-                  },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.blue),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                EditWordScreen(word: word, index: index),
+                          ),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () {
+                        provider.deleteWord(index);
+                      },
+                    ),
+                  ],
                 ),
                 onTap: () {
                   Navigator.push(

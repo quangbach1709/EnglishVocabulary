@@ -31,19 +31,48 @@ class WordProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Check if word already exists (optional, but good for UX)
-      // For now, just fetch.
-
-      final word = await _geminiService.fetchWordData(inputWord);
-      await _repository.addWord(word);
-      _words.add(word); // Or reload from repo
-      _loadWords(); // Refresh list
+      final newWords = await _geminiService.fetchWords(inputWord);
+      for (var word in newWords) {
+        await _repository.addWord(word);
+      }
+      _loadWords();
     } catch (e) {
       _error = e.toString();
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> updateWord(int index, Word updatedWord) async {
+    await _repository.updateWord(index, updatedWord);
+    _loadWords();
+  }
+
+  Future<Word> refreshWordData(String wordText) async {
+    final words = await _geminiService.fetchWords(wordText);
+    if (words.isNotEmpty) {
+      return words.first;
+    }
+    throw Exception('No data found for $wordText');
+  }
+
+  Future<Word> addExamples(Word originalWord) async {
+    final examples = await _geminiService.fetchMoreExamples(originalWord.word);
+
+    final newExamplesEn = List<String>.from(originalWord.examplesEn)
+      ..addAll(examples['examples_en']!);
+    final newExamplesVi = List<String>.from(originalWord.examplesVi)
+      ..addAll(examples['examples_vi']!);
+
+    final newWord = Word(
+      word: originalWord.word,
+      ipa: originalWord.ipa,
+      meaningVi: originalWord.meaningVi,
+      examplesEn: newExamplesEn,
+      examplesVi: newExamplesVi,
+    );
+    return newWord;
   }
 
   Future<void> deleteWord(int index) async {
