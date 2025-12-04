@@ -5,6 +5,7 @@ import 'add_word_screen.dart';
 import 'learning_screen.dart';
 import 'review_screen.dart';
 import 'edit_word_screen.dart';
+import 'game_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -17,20 +18,40 @@ class HomeScreen extends StatelessWidget {
         actions: [
           Consumer<WordProvider>(
             builder: (context, provider, child) {
-              return IconButton(
-                icon: const Icon(Icons.school),
-                tooltip: 'Review All',
-                onPressed: provider.words.isEmpty
-                    ? null
-                    : () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                ReviewScreen(words: provider.words),
-                          ),
-                        );
-                      },
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.videogame_asset),
+                    tooltip: 'Play Game',
+                    onPressed: provider.words.length < 4
+                        ? null
+                        : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    GameScreen(words: provider.words),
+                              ),
+                            );
+                          },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.school),
+                    tooltip: 'Review All',
+                    onPressed: provider.words.isEmpty
+                        ? null
+                        : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    ReviewScreen(words: provider.words),
+                              ),
+                            );
+                          },
+                  ),
+                ],
               );
             },
           ),
