@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/word_provider.dart';
+import 'settings_screen.dart';
 
 class AddWordScreen extends StatefulWidget {
   const AddWordScreen({super.key});
@@ -46,9 +47,40 @@ class _AddWordScreenState extends State<AddWordScreen> {
                     if (provider.error == null && mounted) {
                       Navigator.pop(context);
                     } else if (provider.error != null && mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(provider.error!)));
+                      if (provider.error!.contains('API Key not found')) {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('API Key Missing'),
+                            content: const Text(
+                              'You need to configure your Gemini API Key to add words.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(context); // Close dialog
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const SettingsScreen(),
+                                    ),
+                                  );
+                                },
+                                child: const Text('Open Settings'),
+                              ),
+                            ],
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(provider.error!)),
+                        );
+                      }
                     }
                   }
                 },

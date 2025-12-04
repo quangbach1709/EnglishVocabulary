@@ -9,6 +9,11 @@ A powerful and intuitive Flutter application designed to help you master English
 *   **AI Integration**: Automatically fetches meanings, IPA pronunciation, and examples using **Gemini AI**.
 *   **Batch Actions**: Select multiple words to delete or group them instantly.
 
+### ⚙️ Flexible Configuration (New!)
+*   **User Settings**: Configure your **Gemini API Key** and **Model Name** directly in the app.
+*   **No Coding Required**: You don't need to edit code or configuration files to get started. Just enter your key in the Settings screen.
+*   **Custom Models**: Switch between Gemini models (e.g., `gemini-2.0-flash`, `gemini-1.5-flash`) as needed.
+
 ### 🗂️ Word Grouping & Organization
 *   **Create Groups**: Organize your vocabulary into custom groups (e.g., "Verbs", "Travel", "IELTS").
 *   **Visual Organization**: Groups are displayed in distinct, bordered cards for easy scanning.
@@ -38,18 +43,16 @@ A powerful and intuitive Flutter application designed to help you master English
 
 ## 🚀 Getting Started
 
-1.  **Clone the repository**.
-2.  **Setup Environment**:
-    *   Create a `.env` file in the root directory.
-    *   Add your Gemini API key: `API_KEY=your_api_key_here`.
-3.  **Install Dependencies**:
-    ```bash
-    flutter pub get
-    ```
-4.  **Run the App**:
-    ```bash
-    flutter run
-    ```
+1.  **Install the App**: Download the APK or build from source.
+2.  **Configure API Key**:
+    *   Open the app.
+    *   Tap the **Settings (Gear)** icon in the top right.
+    *   Enter your **Gemini API Key**.
+    *   (Optional) Change the Model Name (default is `gemini-2.0-flash`).
+    *   Tap **Save**.
+3.  **Start Learning**: Add your first word!
+
+*(Note: For developers, you can still use a `.env` file for development convenience, but the in-app settings will take precedence.)*
 
 ## 📱 Screenshots
 *(Add your screenshots here)*

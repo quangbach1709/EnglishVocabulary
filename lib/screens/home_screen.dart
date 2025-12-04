@@ -7,6 +7,7 @@ import 'learning_screen.dart';
 import 'review_screen.dart';
 import 'edit_word_screen.dart';
 import 'game_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -86,6 +87,18 @@ class HomeScreen extends StatelessWidget {
                   onPressed: () => _confirmDeleteSelected(context, provider),
                 ),
               ],
+              IconButton(
+                icon: const Icon(Icons.settings),
+                tooltip: 'Settings',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SettingsScreen(),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
           body: provider.words.isEmpty

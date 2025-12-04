@@ -1,22 +1,41 @@
 import 'dart:convert';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../models/word.dart';
 
 class GeminiService {
-  late final GenerativeModel _model;
+  GenerativeModel get _model {
+    final settingsBox = Hive.box('settings');
+    final apiKey = settingsBox.get('apiKey', defaultValue: '') as String;
+    final modelName =
+        settingsBox.get('modelName', defaultValue: 'gemini-2.0-flash')
+            as String;
 
-  GeminiService() {
-    final apiKey = dotenv.env['API_KEY'];
-    if (apiKey == null) {
-      throw Exception('API_KEY not found in .env file');
+    // Fallback to .env if Hive key is empty
+    String? effectiveApiKey = apiKey;
+    if (effectiveApiKey.isEmpty) {
+      try {
+        effectiveApiKey = dotenv.env['API_KEY'];
+      } catch (_) {
+        // dotenv not initialized, ignore
+      }
     }
-    _model = GenerativeModel(
-      model: 'gemini-2.0-flash',
-      apiKey: apiKey,
+
+    if (effectiveApiKey == null || effectiveApiKey.isEmpty) {
+      throw Exception(
+        'API Key not found. Please configure it in Settings or .env file.',
+      );
+    }
+
+    return GenerativeModel(
+      model: modelName.isNotEmpty ? modelName : 'gemini-2.0-flash',
+      apiKey: effectiveApiKey,
       generationConfig: GenerationConfig(responseMimeType: 'application/json'),
     );
   }
+
+  GeminiService();
 
   Future<List<Word>> fetchWords(String input) async {
     final prompt =

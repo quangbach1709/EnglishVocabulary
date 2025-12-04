@@ -10,7 +10,13 @@ void main() async {
   await Hive.initFlutter();
   Hive.registerAdapter(WordAdapter());
   await Hive.openBox<Word>('words');
-  await dotenv.load(fileName: ".env");
+  await Hive.openBox('settings');
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    // .env file is optional now
+    debugPrint("No .env file found, using Settings.");
+  }
   runApp(
     MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => WordProvider())],
@@ -26,6 +32,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'English Vocabulary',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
