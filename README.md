@@ -1,16 +1,58 @@
-# english
+# English Vocabulary Learning App
 
-A new Flutter project.
+A powerful and intuitive Flutter application designed to help you master English vocabulary effectively. Built with modern features like AI-powered word lookup, smart grouping, and interactive learning modes.
 
-## Getting Started
+## 🌟 Key Features
 
-This project is a starting point for a Flutter application.
+### 📚 Smart Vocabulary Management
+*   **Add Words Easily**: Quickly add new words.
+*   **AI Integration**: Automatically fetches meanings, IPA pronunciation, and examples using **Gemini AI**.
+*   **Batch Actions**: Select multiple words to delete or group them instantly.
 
-A few resources to get you started if this is your first Flutter project:
+### 🗂️ Word Grouping & Organization
+*   **Create Groups**: Organize your vocabulary into custom groups (e.g., "Verbs", "Travel", "IELTS").
+*   **Visual Organization**: Groups are displayed in distinct, bordered cards for easy scanning.
+*   **Manage Groups**: Rename or delete groups with a simple long-press.
+*   **Swipe Actions**:
+    *   **Swipe Left ➡️ Right**: Delete a word (with confirmation).
+    *   **Swipe Right ⬅️ Left**: Remove a word from its group.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### 🎮 Interactive Learning Modes
+*   **Game Mode**: Test your knowledge with a multiple-choice game.
+    *   **Filtered Play**: Select specific groups or words to focus your game session.
+    *   **Global Play**: Play with your entire vocabulary collection.
+*   **Review Mode**: Flashcard-style review to reinforce your memory.
+    *   **TTS Support**: Listen to the correct pronunciation of words.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### ⚡ Efficient User Interface
+*   **Always-on Selection**: Checkboxes are always visible for quick multi-selection.
+*   **Select All**: One-tap selection for all words.
+*   **Expand/Collapse**: Keep your home screen tidy by collapsing groups you aren't studying.
+
+## 🛠️ Technology Stack
+*   **Framework**: Flutter
+*   **State Management**: Provider
+*   **Local Storage**: Hive (NoSQL Database)
+*   **AI Service**: Google Gemini API
+*   **Text-to-Speech**: flutter_tts
+
+## 🚀 Getting Started
+
+1.  **Clone the repository**.
+2.  **Setup Environment**:
+    *   Create a `.env` file in the root directory.
+    *   Add your Gemini API key: `API_KEY=your_api_key_here`.
+3.  **Install Dependencies**:
+    ```bash
+    flutter pub get
+    ```
+4.  **Run the App**:
+    ```bash
+    flutter run
+    ```
+
+## 📱 Screenshots
+*(Add your screenshots here)*
+
+---
+*Built with ❤️ for English Learners.*
