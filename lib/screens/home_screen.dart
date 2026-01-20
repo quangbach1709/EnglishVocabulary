@@ -7,6 +7,7 @@ import 'learning_screen.dart';
 import 'edit_word_screen.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
+import 'grammar_list_screen.dart';
 import 'flashcard_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -18,16 +19,13 @@ class HomeScreen extends StatelessWidget {
       builder: (context, provider, child) {
         return Scaffold(
           appBar: AppBar(
-            leading: Checkbox(
-              value: provider.allSelected,
-              onChanged: (_) => provider.toggleSelectAll(),
-              fillColor: MaterialStateProperty.resolveWith((states) {
-                if (states.contains(MaterialState.selected)) {
-                  return Colors.white;
-                }
-                return null;
-              }),
-              checkColor: Colors.blue,
+            leading: Builder(
+              builder: (context) {
+                return IconButton(
+                  icon: const Icon(Icons.menu),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                );
+              },
             ),
             title: Text(
               provider.selectedWords.isNotEmpty
@@ -35,6 +33,17 @@ class HomeScreen extends StatelessWidget {
                   : 'My Vocabulary',
             ),
             actions: [
+              Checkbox(
+                value: provider.allSelected,
+                onChanged: (_) => provider.toggleSelectAll(),
+                fillColor: MaterialStateProperty.resolveWith((states) {
+                  if (states.contains(MaterialState.selected)) {
+                    return Colors.white;
+                  }
+                  return null;
+                }),
+                checkColor: Colors.blue,
+              ),
               IconButton(
                 icon: const Icon(Icons.school),
                 tooltip: 'Start Review',
@@ -67,6 +76,52 @@ class HomeScreen extends StatelessWidget {
                 },
               ),
             ],
+          ),
+          drawer: Drawer(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                const DrawerHeader(
+                  decoration: BoxDecoration(color: Colors.blue),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        'English Learning',
+                        style: TextStyle(color: Colors.white, fontSize: 24),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Menu',
+                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.book),
+                  title: const Text('Vocabulary'),
+                  selected: true,
+                  onTap: () {
+                    Navigator.pop(context); // Close drawer
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.library_books),
+                  title: const Text('Grammar'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const GrammarListScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
           body: provider.words.isEmpty
               ? const Center(child: Text('No words yet. Add some!'))

@@ -3,13 +3,82 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/word.dart';
+import '../models/grammar_topic.dart';
+import '../models/grammar_exercise.dart';
 
 class GeminiService {
+  // ... existing code ...
+
+  Future<List<GrammarExercise>> fetchGrammarPractice(
+    List<String> topics,
+    int quantityPerTopic,
+  ) async {
+    final topicStr = topics.join(', ');
+    final totalCount = topics.length * quantityPerTopic;
+
+    final prompt =
+        '''
+Act as an English Exam Generator.
+I need practice exercises for the following Grammar Topics: $topicStr.
+
+Configuration:
+- Quantity: Strictly generate exactly $quantityPerTopic exercises FOR EACH TOPIC listed above. (Total exercises = $totalCount).
+- Format: Fill-in-the-blank sentences.
+- Output: JSON only.
+
+Rules for "parts":
+1. DO NOT reveal the grammar topic name in the sentence.
+2. If the question requires conjugating a verb, place the base verb in parentheses as the start of the second part.
+   - Bad: parts: ["When I", "you tomorrow."]
+   - Good: parts: ["When I", "(see) you tomorrow."]
+   - Good: parts: ["She", "(not/go) to school yesterday."]
+
+JSON Schema:
+{
+  "exercises": [
+    {
+      "topic_source": "Name of the topic this question belongs to",
+      "parts": ["Part before blank", "Part after blank"], 
+      "correct_answer": "answer",
+      "hint": "Hint in Vietnamese (e.g., V-ed form of 'go')"
+    }
+  ]
+}
+''';
+
+    final content = [Content.text(prompt)];
+    final response = await _model.generateContent(content);
+
+    if (response.text == null) {
+      throw Exception('No response from Gemini');
+    }
+
+    try {
+      final decoded = jsonDecode(response.text!);
+      if (decoded is Map<String, dynamic> && decoded['exercises'] is List) {
+        final exercises = (decoded['exercises'] as List)
+            .map((e) => GrammarExercise.fromJson(e))
+            .toList();
+
+        // Client-side shuffle
+        exercises.shuffle();
+
+        return exercises;
+      } else {
+        throw Exception('Unexpected JSON format: ${decoded.runtimeType}');
+      }
+    } catch (e) {
+      throw Exception(
+        'Failed to parse Gemini response: $e\nRaw response: ${response.text}',
+      );
+    }
+  }
+
   GenerativeModel get _model {
     final settingsBox = Hive.box('settings');
     final apiKey = settingsBox.get('apiKey', defaultValue: '') as String;
     final modelName =
-        settingsBox.get('modelName', defaultValue: 'gemini-2.0-flash')
+        settingsBox.get('modelName', defaultValue: 'gemini-1.5-flash')
             as String;
 
     // Fallback to .env if Hive key is empty
@@ -29,7 +98,7 @@ class GeminiService {
     }
 
     return GenerativeModel(
-      model: modelName.isNotEmpty ? modelName : 'gemini-2.0-flash',
+      model: modelName.isNotEmpty ? modelName : 'gemini-1.5-flash',
       apiKey: effectiveApiKey,
       generationConfig: GenerationConfig(responseMimeType: 'application/json'),
     );
@@ -127,6 +196,58 @@ class GeminiService {
       }
     } catch (e) {
       throw Exception('Failed to parse examples: $e');
+    }
+  }
+
+  Future<GrammarTopic> fetchGrammarTopic(String topicInput) async {
+    final prompt =
+        '''
+Act as an expert English Teacher explaining grammar to a beginner student who has limited English knowledge.
+Input Topic: "$topicInput"
+
+Task: Explain this topic in Vietnamese. Return valid JSON only.
+
+JSON Schema & Data Mapping Rules:
+{
+  "topic_en": "Standard English Name",
+  "topic_vi": "Vietnamese Name",
+  "definition": "Simple definition in Vietnamese.",
+  "formulas": [
+    {
+      "type": "Name of structure (e.g., Khẳng định, Câu hỏi, or Mệnh đề If)",
+      "structure": "The formula string",
+      "example": "English example sentence",
+      "explanation": "Brief explanation of components"
+    }
+  ],
+  "usages": [
+    { "context": "When to use", "detail": "Detailed explanation" }
+  ],
+  "signs": [
+    "List of recognition words or signs (optional)"
+  ],
+  "tips_for_beginners": "Crucial mistakes to avoid or memory hacks."
+}
+''';
+
+    final content = [Content.text(prompt)];
+    final response = await _model.generateContent(content);
+
+    if (response.text == null) {
+      throw Exception('No response from Gemini');
+    }
+
+    try {
+      final decoded = jsonDecode(response.text!);
+      if (decoded is Map<String, dynamic>) {
+        return GrammarTopic.fromJson(decoded);
+      } else {
+        throw Exception('Unexpected JSON format: ${decoded.runtimeType}');
+      }
+    } catch (e) {
+      throw Exception(
+        'Failed to parse Gemini response: $e\nRaw response: ${response.text}',
+      );
     }
   }
 }

@@ -20,7 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiKeyController.text = _settingsBox.get('apiKey', defaultValue: '');
     _modelNameController.text = _settingsBox.get(
       'modelName',
-      defaultValue: 'gemini-2.0-flash',
+      defaultValue: 'gemini-1.5-flash',
     );
   }
 
@@ -71,12 +71,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               decoration: const InputDecoration(
                 labelText: 'Model Name',
                 border: OutlineInputBorder(),
-                hintText: 'e.g., gemini-2.0-flash',
+                hintText: 'e.g., gemini-1.5-flash',
               ),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Default: gemini-2.0-flash',
+              'Default: gemini-1.5-flash',
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 24),

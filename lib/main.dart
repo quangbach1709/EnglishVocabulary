@@ -3,13 +3,19 @@ import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'models/word.dart';
+import 'models/grammar_topic.dart';
 import 'providers/word_provider.dart';
+import 'providers/grammar_provider.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
   await Hive.initFlutter();
   Hive.registerAdapter(WordAdapter());
+  Hive.registerAdapter(GrammarTopicAdapter());
+  Hive.registerAdapter(GrammarFormulaAdapter());
+  Hive.registerAdapter(GrammarUsageAdapter());
   await Hive.openBox<Word>('words');
+  await Hive.openBox<GrammarTopic>('grammar');
   await Hive.openBox('settings');
   try {
     await dotenv.load(fileName: ".env");
@@ -19,7 +25,10 @@ void main() async {
   }
   runApp(
     MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => WordProvider())],
+      providers: [
+        ChangeNotifierProvider(create: (_) => WordProvider()),
+        ChangeNotifierProvider(create: (_) => GrammarProvider()),
+      ],
       child: const MyApp(),
     ),
   );
