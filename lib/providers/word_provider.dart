@@ -204,4 +204,87 @@ class WordProvider with ChangeNotifier {
     await _repository.deleteWord(index);
     _loadWords();
   }
+
+  // ============================================
+  // SRS (Spaced Repetition System) Methods
+  // ============================================
+
+  /// Updates word's SRS data based on user rating (SM-2 simplified algorithm)
+  /// quality: 0 = Again, 1 = Hard, 2 = Good, 3 = Easy
+  Future<void> updateWordSRS(Word word, int quality) async {
+    final now = DateTime.now();
+    int newInterval;
+    int newStatus;
+    double newEaseFactor = word.easeFactor;
+
+    switch (quality) {
+      case 0: // Again - completely forgot
+        newInterval = 0;
+        newStatus = 0; // Red
+        // Decrease ease factor slightly (minimum 1.3)
+        newEaseFactor = (word.easeFactor - 0.2).clamp(1.3, 2.5);
+        break;
+      case 1: // Hard - difficult to remember
+        newInterval = word.interval == 0 ? 1 : (word.interval * 1.2).round();
+        newStatus = 1; // Orange
+        // Slightly decrease ease factor
+        newEaseFactor = (word.easeFactor - 0.15).clamp(1.3, 2.5);
+        break;
+      case 2: // Good - remembered with effort
+        newInterval = word.interval == 0
+            ? 1
+            : (word.interval * word.easeFactor).round();
+        newStatus = 2; // Yellow
+        // Keep ease factor stable
+        break;
+      case 3: // Easy - remembered effortlessly
+        newInterval = word.interval == 0 ? 4 : (word.interval * 4).round();
+        newStatus = 3; // Light Green
+        // Increase ease factor slightly (maximum 2.5)
+        newEaseFactor = (word.easeFactor + 0.15).clamp(1.3, 2.5);
+        break;
+      default:
+        newInterval = word.interval;
+        newStatus = word.status;
+    }
+
+    // Calculate next review date
+    final nextReview = now.add(Duration(days: newInterval));
+
+    // Update word properties directly (HiveObject)
+    word.interval = newInterval;
+    word.status = newStatus;
+    word.easeFactor = newEaseFactor;
+    word.nextReviewDate = nextReview;
+
+    await word.save();
+    _loadWords();
+  }
+
+  /// Returns words that are due for review (nextReviewDate <= now or null)
+  List<Word> getWordsForReview() {
+    final now = DateTime.now();
+    return _words.where((word) {
+      // Include if never reviewed (null) or if due date has passed
+      return word.nextReviewDate == null ||
+          word.nextReviewDate!.isBefore(now) ||
+          word.nextReviewDate!.isAtSameMomentAs(now);
+    }).toList();
+  }
+
+  /// Get status color for a word
+  static Color getStatusColor(int status) {
+    switch (status) {
+      case 0:
+        return Colors.red.shade100; // New/Forgot
+      case 1:
+        return Colors.orange.shade100; // Hard
+      case 2:
+        return Colors.yellow.shade100; // Good
+      case 3:
+        return Colors.lightGreen.shade100; // Easy
+      default:
+        return Colors.transparent;
+    }
+  }
 }

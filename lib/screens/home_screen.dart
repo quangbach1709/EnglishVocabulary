@@ -4,10 +4,10 @@ import '../providers/word_provider.dart';
 import '../models/word.dart';
 import 'add_word_screen.dart';
 import 'learning_screen.dart';
-import 'review_screen.dart';
 import 'edit_word_screen.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
+import 'flashcard_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -36,44 +36,11 @@ class HomeScreen extends StatelessWidget {
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.videogame_asset),
-                tooltip: 'Play Game',
-                onPressed:
-                    (provider.selectedWords.isNotEmpty
-                            ? provider.selectedWords.length
-                            : provider.words.length) <
-                        4
-                    ? null
-                    : () {
-                        final wordsToPlay = provider.selectedWords.isNotEmpty
-                            ? provider.selectedWords.toList()
-                            : provider.words;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                GameScreen(words: wordsToPlay),
-                          ),
-                        );
-                      },
-              ),
-              IconButton(
                 icon: const Icon(Icons.school),
-                tooltip: 'Review',
+                tooltip: 'Start Review',
                 onPressed: provider.words.isEmpty
                     ? null
-                    : () {
-                        final wordsToReview = provider.selectedWords.isNotEmpty
-                            ? provider.selectedWords.toList()
-                            : provider.words;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                ReviewScreen(words: wordsToReview),
-                          ),
-                        );
-                      },
+                    : () => _showReviewOptionsSheet(context, provider),
               ),
               if (provider.selectedWords.isNotEmpty) ...[
                 IconButton(
@@ -253,38 +220,43 @@ class HomeScreen extends StatelessWidget {
         }
         return false;
       },
-      child: ListTile(
-        leading: Checkbox(
-          value: isSelected,
-          onChanged: (_) => provider.toggleWordSelection(word),
-        ),
-        title: Text(word.word),
-        subtitle: Text(word.meaningVi),
-        selected: isSelected,
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => LearningScreen(word: word)),
-          );
-        },
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit, color: Colors.blue),
-              onPressed: () {
-                // Find index for EditScreen (legacy requirement)
-                final index = provider.words.indexOf(word);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        EditWordScreen(word: word, index: index),
-                  ),
-                );
-              },
-            ),
-          ],
+      child: Container(
+        color: WordProvider.getStatusColor(word.status),
+        child: ListTile(
+          leading: Checkbox(
+            value: isSelected,
+            onChanged: (_) => provider.toggleWordSelection(word),
+          ),
+          title: Text(word.word),
+          subtitle: Text(word.meaningVi),
+          selected: isSelected,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => LearningScreen(word: word),
+              ),
+            );
+          },
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.edit, color: Colors.blue),
+                onPressed: () {
+                  // Find index for EditScreen (legacy requirement)
+                  final index = provider.words.indexOf(word);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          EditWordScreen(word: word, index: index),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -436,6 +408,160 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  // ============================================
+  // Review Options Modal Bottom Sheet
+  // ============================================
+
+  void _showReviewOptionsSheet(BuildContext context, WordProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Choose Review Mode',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            // Flashcard Mode - SRS based
+            ListTile(
+              leading: const Icon(Icons.flip, color: Colors.purple),
+              title: const Text('Flashcard'),
+              subtitle: const Text('SRS-based review with flip cards'),
+              onTap: () {
+                Navigator.pop(context);
+                _startFlashcardReview(context, provider);
+              },
+            ),
+            const Divider(),
+            // Spelling Mode - Smart selection
+            ListTile(
+              leading: const Icon(Icons.keyboard, color: Colors.blue),
+              title: const Text('Spelling (Điền từ)'),
+              subtitle: const Text('Type the English word'),
+              onTap: () {
+                Navigator.pop(context);
+                _startSpellingReview(context, provider);
+              },
+            ),
+            const Divider(),
+            // Multiple Choice Mode - Smart selection
+            ListTile(
+              leading: const Icon(
+                Icons.check_circle_outline,
+                color: Colors.green,
+              ),
+              title: const Text('Multiple Choice (Chọn từ)'),
+              subtitle: const Text('Choose the correct answer'),
+              onTap: () {
+                Navigator.pop(context);
+                _startMultipleChoiceReview(context, provider);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Flashcard Mode: Uses SRS-based words (nextReviewDate <= now)
+  void _startFlashcardReview(BuildContext context, WordProvider provider) {
+    final wordsForReview = provider.getWordsForReview();
+
+    if (wordsForReview.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No words due for review! Great job! 🎉'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Reviewing ${wordsForReview.length} due words (Flashcard)',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FlashcardScreen(words: wordsForReview),
+      ),
+    );
+  }
+
+  /// Spelling Mode: Uses selected words OR all words if none selected
+  void _startSpellingReview(BuildContext context, WordProvider provider) {
+    final List<Word> wordsToReview;
+    final String message;
+
+    // Smart Selection Logic
+    if (provider.selectedWords.isNotEmpty) {
+      wordsToReview = provider.selectedWords.toList();
+      message = 'Reviewing ${wordsToReview.length} selected words (Spelling)';
+    } else {
+      wordsToReview = provider.words;
+      message = 'Reviewing all ${wordsToReview.length} words (Spelling)';
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LearningScreen(words: wordsToReview),
+      ),
+    );
+  }
+
+  /// Multiple Choice Mode: Uses selected words OR all words if none selected
+  void _startMultipleChoiceReview(BuildContext context, WordProvider provider) {
+    final List<Word> wordsToReview;
+    final String message;
+
+    // Smart Selection Logic
+    if (provider.selectedWords.isNotEmpty) {
+      wordsToReview = provider.selectedWords.toList();
+      message =
+          'Reviewing ${wordsToReview.length} selected words (Multiple Choice)';
+    } else {
+      wordsToReview = provider.words;
+      message = 'Reviewing all ${wordsToReview.length} words (Multiple Choice)';
+    }
+
+    // Need at least 4 words for multiple choice
+    if (wordsToReview.length < 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Need at least 4 words for Multiple Choice mode!'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => GameScreen(words: wordsToReview)),
     );
   }
 }

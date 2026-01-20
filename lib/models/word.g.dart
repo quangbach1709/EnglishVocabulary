@@ -23,13 +23,17 @@ class WordAdapter extends TypeAdapter<Word> {
       examplesEn: (fields[3] as List).cast<String>(),
       examplesVi: (fields[4] as List).cast<String>(),
       group: fields[5] as String?,
+      nextReviewDate: fields[6] as DateTime?,
+      interval: fields[7] == null ? 0 : fields[7] as int,
+      easeFactor: fields[8] == null ? 2.5 : fields[8] as double,
+      status: fields[9] == null ? 0 : fields[9] as int,
     );
   }
 
   @override
   void write(BinaryWriter writer, Word obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.word)
       ..writeByte(1)
@@ -41,7 +45,15 @@ class WordAdapter extends TypeAdapter<Word> {
       ..writeByte(4)
       ..write(obj.examplesVi)
       ..writeByte(5)
-      ..write(obj.group);
+      ..write(obj.group)
+      ..writeByte(6)
+      ..write(obj.nextReviewDate)
+      ..writeByte(7)
+      ..write(obj.interval)
+      ..writeByte(8)
+      ..write(obj.easeFactor)
+      ..writeByte(9)
+      ..write(obj.status);
   }
 
   @override
