@@ -52,14 +52,9 @@ class _GrammarListScreenState extends State<GrammarListScreen> {
                   itemCount: provider.topics.length,
                   itemBuilder: (context, index) {
                     final topic = provider.topics[index];
-                    // Using topicEn as key for simplicity, assuming uniqueness or use Hive key if accessible
-                    // HiveObject key is dynamic, so let's use topic object reference for selection?
-                    // But we want ID. Let's use topic.key.toString() if verified.
-                    // But for now, let's use the object reference logic by ID or just index?
-                    // The safest is to use the topic object itself, but Set<GrammarTopic> requires equals/hashcode.
-                    // Let's use topic.key (Hive key).
-                    final topicKey = topic.key.toString();
-                    final isSelected = _selectedTopicIds.contains(topicKey);
+                    // Use topic.id for selection (stable unique identifier)
+                    final topicId = topic.id;
+                    final isSelected = _selectedTopicIds.contains(topicId);
 
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -70,7 +65,7 @@ class _GrammarListScreenState extends State<GrammarListScreen> {
                       child: ListTile(
                         leading: Checkbox(
                           value: isSelected,
-                          onChanged: (_) => _toggleSelection(topicKey),
+                          onChanged: (_) => _toggleSelection(topicId),
                         ),
                         title: Text(
                           topic.topicEn,
@@ -91,7 +86,7 @@ class _GrammarListScreenState extends State<GrammarListScreen> {
                             ),
                           );
                         },
-                        onLongPress: () => _toggleSelection(topicKey),
+                        onLongPress: () => _toggleSelection(topicId),
                       ),
                     );
                   },
@@ -148,7 +143,7 @@ class _GrammarListScreenState extends State<GrammarListScreen> {
       topicsToPractice = provider.topics;
     } else {
       topicsToPractice = provider.topics
-          .where((t) => _selectedTopicIds.contains(t.key.toString()))
+          .where((t) => _selectedTopicIds.contains(t.id))
           .toList();
     }
 

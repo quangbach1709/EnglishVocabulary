@@ -1,28 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'models/word.dart';
-import 'models/grammar_topic.dart';
+
+import 'firebase_options.dart';
+
 import 'providers/word_provider.dart';
 import 'providers/grammar_provider.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
-  await Hive.initFlutter();
-  Hive.registerAdapter(WordAdapter());
-  Hive.registerAdapter(GrammarTopicAdapter());
-  Hive.registerAdapter(GrammarFormulaAdapter());
-  Hive.registerAdapter(GrammarUsageAdapter());
-  await Hive.openBox<Word>('words');
-  await Hive.openBox<GrammarTopic>('grammar');
-  await Hive.openBox('settings');
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables (Required for Firebase)
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {
-    // .env file is optional now
-    debugPrint("No .env file found, using Settings.");
+    debugPrint("Error loading .env file: $e");
+    // If .env is missing, Firebase init might fail if keys are missing
   }
+
+  // Initialize Firebase
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Initialize Hive for Settings
+  await Hive.initFlutter();
+  await Hive.openBox('settings');
+
   runApp(
     MultiProvider(
       providers: [

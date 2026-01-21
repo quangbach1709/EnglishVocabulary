@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import '../models/grammar_topic.dart';
 import '../models/grammar_exercise.dart';
 import '../services/gemini_service.dart';
+import '../services/firestore_service.dart';
 
 class GrammarProvider with ChangeNotifier {
   final GeminiService _geminiService = GeminiService();
+  final FirestoreService _firestoreService = FirestoreService();
+
   List<GrammarTopic> _topics = [];
   bool _isLoading = false;
   String? _error;
@@ -26,10 +28,21 @@ class GrammarProvider with ChangeNotifier {
     return _geminiService.fetchGrammarPractice(topicNames, quantity);
   }
 
-  void _loadTopics() {
-    final box = Hive.box<GrammarTopic>('grammar');
-    _topics = box.values.toList();
-    notifyListeners();
+  Future<void> _loadTopics() async {
+    _isLoading = true;
+    // Don't notify here to avoid build errors during init, or use scheduleMicrotask
+    // But for simplicity, we just set loading.
+    // If we are in build, notifyListeners might throw.
+    // Let's safe guard it or just fetch.
+    try {
+      _topics = await _firestoreService.getAllGrammarTopics();
+      _error = null;
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> addTopic(String input) async {
@@ -39,22 +52,24 @@ class GrammarProvider with ChangeNotifier {
 
     try {
       final topic = await _geminiService.fetchGrammarTopic(input);
-      final box = Hive.box<GrammarTopic>('grammar');
-      await box.add(topic);
+      await _firestoreService.saveGrammarTopic(topic);
       _topics.add(topic);
-      _isLoading = false;
-      notifyListeners();
     } catch (e) {
-      _isLoading = false;
       _error = e.toString();
-      notifyListeners();
       rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
   Future<void> deleteTopic(GrammarTopic topic) async {
-    await topic.delete(); // HiveObject delete
-    _topics.remove(topic);
+    await _firestoreService.deleteGrammarTopic(topic.id);
+    _topics.removeWhere((t) => t.id == topic.id);
     notifyListeners();
+  }
+
+  Future<void> refreshTopics() async {
+    await _loadTopics();
   }
 }

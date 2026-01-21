@@ -259,7 +259,7 @@ class HomeScreen extends StatelessWidget {
                 ),
                 TextButton(
                   onPressed: () {
-                    provider.deleteWord(provider.words.indexOf(word));
+                    provider.deleteWord(word);
                     Navigator.of(context).pop(true);
                   },
                   style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -299,13 +299,10 @@ class HomeScreen extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.edit, color: Colors.blue),
                 onPressed: () {
-                  // Find index for EditScreen (legacy requirement)
-                  final index = provider.words.indexOf(word);
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          EditWordScreen(word: word, index: index),
+                      builder: (context) => EditWordScreen(word: word),
                     ),
                   );
                 },

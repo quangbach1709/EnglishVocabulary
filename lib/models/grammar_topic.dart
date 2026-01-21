@@ -1,20 +1,9 @@
-import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
-part 'grammar_topic.g.dart';
-
-@HiveType(typeId: 2)
-class GrammarFormula extends HiveObject {
-  @HiveField(0)
+class GrammarFormula {
   final String type;
-
-  @HiveField(1)
   final String structure;
-
-  @HiveField(2)
   final String example;
-
-  @HiveField(3)
   final String explanation;
 
   GrammarFormula({
@@ -32,14 +21,28 @@ class GrammarFormula extends HiveObject {
       explanation: json['explanation'] ?? '',
     );
   }
+
+  factory GrammarFormula.fromMap(Map<String, dynamic> map) {
+    return GrammarFormula(
+      type: map['type'] ?? '',
+      structure: map['structure'] ?? '',
+      example: map['example'] ?? '',
+      explanation: map['explanation'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'type': type,
+      'structure': structure,
+      'example': example,
+      'explanation': explanation,
+    };
+  }
 }
 
-@HiveType(typeId: 3)
-class GrammarUsage extends HiveObject {
-  @HiveField(0)
+class GrammarUsage {
   final String context;
-
-  @HiveField(1)
   final String detail;
 
   GrammarUsage({required this.context, required this.detail});
@@ -50,32 +53,27 @@ class GrammarUsage extends HiveObject {
       detail: json['detail'] ?? '',
     );
   }
+
+  factory GrammarUsage.fromMap(Map<String, dynamic> map) {
+    return GrammarUsage(
+      context: map['context'] ?? '',
+      detail: map['detail'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {'context': context, 'detail': detail};
+  }
 }
 
-@HiveType(typeId: 1)
-class GrammarTopic extends HiveObject {
-  @HiveField(0)
+class GrammarTopic {
   final String id;
-
-  @HiveField(1)
   final String topicEn;
-
-  @HiveField(2)
   final String topicVi;
-
-  @HiveField(3)
   final String definition;
-
-  @HiveField(4)
   final List<GrammarFormula> formulas;
-
-  @HiveField(5)
   final List<GrammarUsage> usages;
-
-  @HiveField(6)
   final List<String> signs;
-
-  @HiveField(7)
   final String tipsForBeginners;
 
   GrammarTopic({
@@ -91,7 +89,7 @@ class GrammarTopic extends HiveObject {
 
   factory GrammarTopic.fromJson(Map<String, dynamic> json) {
     return GrammarTopic(
-      id: json['id'] ?? const Uuid().v4(), // Generate ID if null
+      id: json['id'] ?? const Uuid().v4(),
       topicEn: json['topic_en'] ?? '',
       topicVi: json['topic_vi'] ?? '',
       definition: json['definition'] ?? '',
@@ -111,6 +109,64 @@ class GrammarTopic extends HiveObject {
               .toList() ??
           [],
       tipsForBeginners: json['tips_for_beginners'] ?? '',
+    );
+  }
+
+  factory GrammarTopic.fromMap(Map<String, dynamic> map) {
+    return GrammarTopic(
+      id: map['id'] ?? const Uuid().v4(),
+      topicEn: map['topic_en'] ?? '',
+      topicVi: map['topic_vi'] ?? '',
+      definition: map['definition'] ?? '',
+      formulas:
+          (map['formulas'] as List<dynamic>?)
+              ?.map((e) => GrammarFormula.fromMap(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      usages:
+          (map['usages'] as List<dynamic>?)
+              ?.map((e) => GrammarUsage.fromMap(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      signs:
+          (map['signs'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+          [],
+      tipsForBeginners: map['tips_for_beginners'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'topic_en': topicEn,
+      'topic_vi': topicVi,
+      'definition': definition,
+      'formulas': formulas.map((e) => e.toMap()).toList(),
+      'usages': usages.map((e) => e.toMap()).toList(),
+      'signs': signs,
+      'tips_for_beginners': tipsForBeginners,
+    };
+  }
+
+  GrammarTopic copyWith({
+    String? id,
+    String? topicEn,
+    String? topicVi,
+    String? definition,
+    List<GrammarFormula>? formulas,
+    List<GrammarUsage>? usages,
+    List<String>? signs,
+    String? tipsForBeginners,
+  }) {
+    return GrammarTopic(
+      id: id ?? this.id,
+      topicEn: topicEn ?? this.topicEn,
+      topicVi: topicVi ?? this.topicVi,
+      definition: definition ?? this.definition,
+      formulas: formulas ?? this.formulas,
+      usages: usages ?? this.usages,
+      signs: signs ?? this.signs,
+      tipsForBeginners: tipsForBeginners ?? this.tipsForBeginners,
     );
   }
 }

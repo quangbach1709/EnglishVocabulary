@@ -5,9 +5,8 @@ import '../providers/word_provider.dart';
 
 class EditWordScreen extends StatefulWidget {
   final Word word;
-  final int index;
 
-  const EditWordScreen({super.key, required this.word, required this.index});
+  const EditWordScreen({super.key, required this.word});
 
   @override
   State<EditWordScreen> createState() => _EditWordScreenState();
@@ -113,7 +112,7 @@ class _EditWordScreenState extends State<EditWordScreen> {
   }
 
   Word _buildCurrentWord() {
-    return Word(
+    return widget.word.copyWith(
       word: _wordController.text,
       ipa: _ipaController.text,
       meaningVi: _meaningController.text,
@@ -124,7 +123,7 @@ class _EditWordScreenState extends State<EditWordScreen> {
 
   void _save() {
     final provider = Provider.of<WordProvider>(context, listen: false);
-    provider.updateWord(widget.index, _buildCurrentWord());
+    provider.updateWord(_buildCurrentWord());
     Navigator.pop(context);
   }
 

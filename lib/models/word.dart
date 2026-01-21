@@ -1,39 +1,19 @@
-import 'package:hive/hive.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-part 'word.g.dart';
-
-@HiveType(typeId: 0)
-class Word extends HiveObject {
-  @HiveField(0)
+class Word {
   final String word;
-
-  @HiveField(1)
   final String ipa;
-
-  @HiveField(2)
   final String meaningVi;
-
-  @HiveField(3)
   final List<String> examplesEn;
-
-  @HiveField(4)
   final List<String> examplesVi;
-
-  @HiveField(5)
   String? group;
 
   // SRS (Spaced Repetition System) Fields
-  @HiveField(6)
   DateTime? nextReviewDate;
-
-  @HiveField(7, defaultValue: 0)
   int interval;
-
-  @HiveField(8, defaultValue: 2.5)
   double easeFactor;
-
-  @HiveField(9, defaultValue: 0)
-  int status; // 0: New/Forgot (Red), 1: Hard (Orange), 2: Good (Yellow), 3: Easy (Light Green)
+  int
+  status; // 0: New/Forgot (Red), 1: Hard (Orange), 2: Good (Yellow), 3: Easy (Light Green)
 
   Word({
     required this.word,
@@ -48,6 +28,51 @@ class Word extends HiveObject {
     this.status = 0,
   });
 
+  /// Converts the Word object to a Map for Firestore
+  Map<String, dynamic> toMap() {
+    return {
+      'word': word,
+      'ipa': ipa,
+      'meaning_vi': meaningVi,
+      'examples_en': examplesEn,
+      'examples_vi': examplesVi,
+      'group': group,
+      'next_review_date': nextReviewDate != null
+          ? Timestamp.fromDate(nextReviewDate!)
+          : null,
+      'interval': interval,
+      'ease_factor': easeFactor,
+      'status': status,
+    };
+  }
+
+  /// Creates a Word object from a Firestore Map
+  factory Word.fromMap(Map<String, dynamic> map) {
+    return Word(
+      word: map['word'] ?? '',
+      ipa: map['ipa'] ?? '',
+      meaningVi: map['meaning_vi'] ?? '',
+      examplesEn:
+          (map['examples_en'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      examplesVi:
+          (map['examples_vi'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      group: map['group'],
+      nextReviewDate: map['next_review_date'] != null
+          ? (map['next_review_date'] as Timestamp).toDate()
+          : null,
+      interval: map['interval'] ?? 0,
+      easeFactor: (map['ease_factor'] ?? 2.5).toDouble(),
+      status: map['status'] ?? 0,
+    );
+  }
+
+  /// Creates a Word object from JSON (for Gemini API response)
   factory Word.fromJson(Map<String, dynamic> json) {
     return Word(
       word: json['word'] ?? '',
@@ -73,6 +98,7 @@ class Word extends HiveObject {
     );
   }
 
+  /// Converts the Word object to JSON
   Map<String, dynamic> toJson() {
     return {
       'word': word,
@@ -86,5 +112,35 @@ class Word extends HiveObject {
       'ease_factor': easeFactor,
       'status': status,
     };
+  }
+
+  /// Returns the lowercase English word (used as Document ID)
+  String get english => word.toLowerCase();
+
+  /// Creates a copy of the Word with updated fields
+  Word copyWith({
+    String? word,
+    String? ipa,
+    String? meaningVi,
+    List<String>? examplesEn,
+    List<String>? examplesVi,
+    String? group,
+    DateTime? nextReviewDate,
+    int? interval,
+    double? easeFactor,
+    int? status,
+  }) {
+    return Word(
+      word: word ?? this.word,
+      ipa: ipa ?? this.ipa,
+      meaningVi: meaningVi ?? this.meaningVi,
+      examplesEn: examplesEn ?? this.examplesEn,
+      examplesVi: examplesVi ?? this.examplesVi,
+      group: group ?? this.group,
+      nextReviewDate: nextReviewDate ?? this.nextReviewDate,
+      interval: interval ?? this.interval,
+      easeFactor: easeFactor ?? this.easeFactor,
+      status: status ?? this.status,
+    );
   }
 }

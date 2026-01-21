@@ -17,14 +17,26 @@ class WordProvider with ChangeNotifier {
   String? get error => _error;
 
   WordProvider() {
-    _loadWords();
+    loadWords();
   }
 
-  void _loadWords() {
-    _words = _repository.getWords();
+  /// Loads all words from Firestore
+  Future<void> loadWords() async {
+    _isLoading = true;
     notifyListeners();
+
+    try {
+      _words = await _repository.getWords();
+      _error = null;
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
+  /// Adds words using Gemini AI and saves to Firestore
   Future<void> addWord(String inputWord) async {
     _isLoading = true;
     _error = null;
@@ -35,7 +47,7 @@ class WordProvider with ChangeNotifier {
       for (var word in newWords) {
         await _repository.addWord(word);
       }
-      _loadWords();
+      await loadWords();
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -44,11 +56,18 @@ class WordProvider with ChangeNotifier {
     }
   }
 
-  Future<void> updateWord(int index, Word updatedWord) async {
-    await _repository.updateWord(index, updatedWord);
-    _loadWords();
+  /// Updates a word in Firestore
+  Future<void> updateWord(Word updatedWord) async {
+    try {
+      await _repository.updateWord(updatedWord);
+      await loadWords();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+    }
   }
 
+  /// Refreshes word data from Gemini
   Future<Word> refreshWordData(String wordText) async {
     final words = await _geminiService.fetchWords(wordText);
     if (words.isNotEmpty) {
@@ -57,6 +76,7 @@ class WordProvider with ChangeNotifier {
     throw Exception('No data found for $wordText');
   }
 
+  /// Adds more examples to a word
   Future<Word> addExamples(Word originalWord) async {
     final examples = await _geminiService.fetchMoreExamples(originalWord.word);
 
@@ -65,26 +85,20 @@ class WordProvider with ChangeNotifier {
     final newExamplesVi = List<String>.from(originalWord.examplesVi)
       ..addAll(examples['examples_vi']!);
 
-    final newWord = Word(
-      word: originalWord.word,
-      ipa: originalWord.ipa,
-      meaningVi: originalWord.meaningVi,
+    return originalWord.copyWith(
       examplesEn: newExamplesEn,
       examplesVi: newExamplesVi,
     );
-    return newWord;
   }
 
+  // ============================================
   // Selection Mode State
+  // ============================================
   bool _isSelectionMode = false;
   bool get isSelectionMode => _isSelectionMode;
 
   final Set<Word> _selectedWords = {};
   Set<Word> get selectedWords => _selectedWords;
-
-  // Grouping State
-  final Set<String> _collapsedGroups = {};
-  Set<String> get collapsedGroups => _collapsedGroups;
 
   bool get allSelected =>
       _words.isNotEmpty && _selectedWords.length == _words.length;
@@ -117,54 +131,68 @@ class WordProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Deletes all selected words
   Future<void> deleteSelectedWords() async {
     for (var word in _selectedWords) {
-      // Find index in repository (assuming repository handles by object or we need index)
-      // Since repository uses index, we need to find it.
-      // Ideally repository should support delete by object or ID.
-      // For now, let's find index in the current list.
-      final index = _words.indexOf(word);
-      if (index != -1) {
-        await _repository.deleteWord(index);
-      }
+      await _repository.deleteWord(word.english);
     }
     _selectedWords.clear();
     _isSelectionMode = false;
-    _loadWords();
+    await loadWords();
   }
 
-  // Grouping Methods
+  // ============================================
+  // Grouping State
+  // ============================================
+  final Set<String> _collapsedGroups = {};
+  Set<String> get collapsedGroups => _collapsedGroups;
+
+  /// Creates a group for selected words
   Future<void> createGroup(String groupName) async {
     for (var word in _selectedWords) {
-      word.group = groupName;
-      await word.save(); // HiveObject save
+      final updatedWord = word.copyWith(group: groupName);
+      await _repository.updateWord(updatedWord);
     }
     _selectedWords.clear();
     _isSelectionMode = false;
-    _loadWords();
+    await loadWords();
   }
 
+  /// Renames a group
   Future<void> renameGroup(String oldName, String newName) async {
     final wordsInGroup = _words.where((w) => w.group == oldName);
     for (var word in wordsInGroup) {
-      word.group = newName;
-      await word.save();
+      final updatedWord = word.copyWith(group: newName);
+      await _repository.updateWord(updatedWord);
     }
-    _loadWords();
+    await loadWords();
   }
 
+  /// Removes a word from its group
   Future<void> removeWordFromGroup(Word word) async {
-    word.group = null;
-    await word.save();
-    _loadWords();
+    final updatedWord = Word(
+      word: word.word,
+      ipa: word.ipa,
+      meaningVi: word.meaningVi,
+      examplesEn: word.examplesEn,
+      examplesVi: word.examplesVi,
+      group: null, // Remove group
+      nextReviewDate: word.nextReviewDate,
+      interval: word.interval,
+      easeFactor: word.easeFactor,
+      status: word.status,
+    );
+    await _repository.updateWord(updatedWord);
+    await loadWords();
   }
 
+  /// Deletes all words in a group
   Future<void> deleteGroup(String groupName) async {
     final wordsInGroup = _words.where((w) => w.group == groupName).toList();
     for (var word in wordsInGroup) {
-      await word.delete(); // HiveObject delete
+      await _repository.deleteWord(word.english);
     }
-    _loadWords();
+    await loadWords();
   }
 
   void toggleGroupSelection(String? groupName) {
@@ -188,7 +216,7 @@ class WordProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Helper to get words by group
+  /// Helper to get words by group
   Map<String?, List<Word>> get wordsByGroup {
     final Map<String?, List<Word>> grouped = {};
     for (var word in _words) {
@@ -200,9 +228,10 @@ class WordProvider with ChangeNotifier {
     return grouped;
   }
 
-  Future<void> deleteWord(int index) async {
-    await _repository.deleteWord(index);
-    _loadWords();
+  /// Deletes a single word
+  Future<void> deleteWord(Word word) async {
+    await _repository.deleteWord(word.english);
+    await loadWords();
   }
 
   // ============================================
@@ -221,13 +250,11 @@ class WordProvider with ChangeNotifier {
       case 0: // Again - completely forgot
         newInterval = 0;
         newStatus = 0; // Red
-        // Decrease ease factor slightly (minimum 1.3)
         newEaseFactor = (word.easeFactor - 0.2).clamp(1.3, 2.5);
         break;
       case 1: // Hard - difficult to remember
         newInterval = word.interval == 0 ? 1 : (word.interval * 1.2).round();
         newStatus = 1; // Orange
-        // Slightly decrease ease factor
         newEaseFactor = (word.easeFactor - 0.15).clamp(1.3, 2.5);
         break;
       case 2: // Good - remembered with effort
@@ -235,12 +262,10 @@ class WordProvider with ChangeNotifier {
             ? 1
             : (word.interval * word.easeFactor).round();
         newStatus = 2; // Yellow
-        // Keep ease factor stable
         break;
       case 3: // Easy - remembered effortlessly
         newInterval = word.interval == 0 ? 4 : (word.interval * 4).round();
         newStatus = 3; // Light Green
-        // Increase ease factor slightly (maximum 2.5)
         newEaseFactor = (word.easeFactor + 0.15).clamp(1.3, 2.5);
         break;
       default:
@@ -251,21 +276,22 @@ class WordProvider with ChangeNotifier {
     // Calculate next review date
     final nextReview = now.add(Duration(days: newInterval));
 
-    // Update word properties directly (HiveObject)
-    word.interval = newInterval;
-    word.status = newStatus;
-    word.easeFactor = newEaseFactor;
-    word.nextReviewDate = nextReview;
+    // Create updated word
+    final updatedWord = word.copyWith(
+      interval: newInterval,
+      status: newStatus,
+      easeFactor: newEaseFactor,
+      nextReviewDate: nextReview,
+    );
 
-    await word.save();
-    _loadWords();
+    await _repository.updateWord(updatedWord);
+    await loadWords();
   }
 
   /// Returns words that are due for review (nextReviewDate <= now or null)
   List<Word> getWordsForReview() {
     final now = DateTime.now();
     return _words.where((word) {
-      // Include if never reviewed (null) or if due date has passed
       return word.nextReviewDate == null ||
           word.nextReviewDate!.isBefore(now) ||
           word.nextReviewDate!.isAtSameMomentAs(now);
