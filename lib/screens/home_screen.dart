@@ -9,7 +9,6 @@ import 'game_screen.dart';
 import 'settings_screen.dart';
 import 'grammar_list_screen.dart';
 import 'flashcard_screen.dart';
-import '../services/firestore_service.dart'; // Import service
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -494,16 +493,6 @@ class HomeScreen extends StatelessWidget {
                 _startFlashcardReview(context, provider);
               },
             ),
-            // Cram Mode - Hard words only
-            ListTile(
-              leading: const Icon(Icons.whatshot, color: Colors.deepOrange),
-              title: const Text('🔥 Ôn cấp tốc (Flashcard - Cram)'),
-              subtitle: const Text('Review hard words only (No SRS update)'),
-              onTap: () {
-                Navigator.pop(context);
-                _startCramReview(context);
-              },
-            ),
             const Divider(),
             // Spelling Mode - Smart selection
             ListTile(
@@ -536,26 +525,52 @@ class HomeScreen extends StatelessWidget {
   }
 
   /// Flashcard Mode: Uses SRS-based words (nextReviewDate <= now)
+  /// Flashcard Mode: Uses SRS-based words (nextReviewDate <= now)
   void _startFlashcardReview(BuildContext context, WordProvider provider) {
-    final wordsForReview = provider.getWordsForReview();
+    List<Word> wordsForReview = [];
+    String message = '';
 
-    if (wordsForReview.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No words due for review! Great job! 🎉'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      return;
+    // 1. Case: Manual Selection
+    if (provider.selectedWords.isNotEmpty) {
+      final now = DateTime.now();
+      // Filter: Due OR Forgot(0) OR Hard(1)
+      wordsForReview = provider.selectedWords.where((w) {
+        final isDue =
+            w.nextReviewDate == null || w.nextReviewDate!.isBefore(now);
+        final isDifficult = w.status == 0 || w.status == 1;
+        return isDue || isDifficult;
+      }).toList();
+
+      if (wordsForReview.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Selected words are not due for review yet! (Choose others or use Cram Mode)',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      message = 'Reviewing ${wordsForReview.length} selected due words';
+    }
+    // 2. Case: Global Review (No selection)
+    else {
+      wordsForReview = provider.getWordsForReview();
+      if (wordsForReview.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No words due for review! Great job! 🎉'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
+      }
+      message = 'Reviewing ${wordsForReview.length} due words (Flashcard)';
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Reviewing ${wordsForReview.length} due words (Flashcard)',
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
 
     Navigator.push(
@@ -626,52 +641,5 @@ class HomeScreen extends StatelessWidget {
       context,
       MaterialPageRoute(builder: (context) => GameScreen(words: wordsToReview)),
     );
-  }
-
-  /// Cram Mode: Fetches words with status 0 or 1 from Firestore
-  Future<void> _startCramReview(BuildContext context) async {
-    try {
-      final cramWords = await FirestoreService().getCramWords();
-
-      if (context.mounted) {
-        if (cramWords.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'No hard words found to cram! You are doing great!',
-              ),
-              backgroundColor: Colors.green,
-            ),
-          );
-          return;
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Cramming ${cramWords.length} words...'),
-            duration: const Duration(seconds: 1),
-          ),
-        );
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => FlashcardScreen(
-              words: cramWords,
-              isCramMode: true, // Enable Cram Mode
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading cram words: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 }

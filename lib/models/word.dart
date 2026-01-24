@@ -143,4 +143,14 @@ class Word {
       status: status ?? this.status,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is Word && other.english == english;
+  }
+
+  @override
+  int get hashCode => english.hashCode;
 }

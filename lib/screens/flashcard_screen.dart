@@ -7,13 +7,8 @@ import '../providers/word_provider.dart';
 
 class FlashcardScreen extends StatefulWidget {
   final List<Word> words;
-  final bool isCramMode;
 
-  const FlashcardScreen({
-    super.key,
-    required this.words,
-    this.isCramMode = false,
-  });
+  const FlashcardScreen({super.key, required this.words});
 
   @override
   State<FlashcardScreen> createState() => _FlashcardScreenState();
@@ -89,13 +84,6 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
   }
 
   void _rateWord(int quality) {
-    // In Cram Mode, we do NOT update SRS to preserve the schedule
-    if (widget.isCramMode) {
-      // Optional: Just show feedback visually or do nothing but advance
-      _nextCard();
-      return;
-    }
-
     final provider = Provider.of<WordProvider>(context, listen: false);
     provider.updateWordSRS(currentWord, quality);
     _nextCard();
@@ -111,18 +99,14 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
   Widget build(BuildContext context) {
     if (_reviewWords.isEmpty) {
       return Scaffold(
-        appBar: AppBar(
-          title: Text(widget.isCramMode ? 'Cram Mode' : 'Flashcard Review'),
-        ),
+        appBar: AppBar(title: const Text('Flashcard Review')),
         body: const Center(child: Text('No words to review!')),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          '${widget.isCramMode ? '🔥 Cram' : 'Flashcard'} (${_currentIndex + 1}/${_reviewWords.length})',
-        ),
+        title: Text('Flashcard (${_currentIndex + 1}/${_reviewWords.length})'),
         actions: [
           IconButton(
             icon: const Icon(Icons.volume_up),
