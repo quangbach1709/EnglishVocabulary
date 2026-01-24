@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../models/word.dart';
+import '../services/firestore_service.dart';
 
 class LearningScreen extends StatefulWidget {
   final Word? word; // For single word learning
@@ -68,9 +69,32 @@ class _LearningScreenState extends State<LearningScreen> {
     _isCorrect = true;
     _showDetails = true;
     _speak();
+  }
 
-    // Auto-advance removed as per user request.
-    // User will press the "Next" button manually.
+  Future<void> _onSkipPressed() async {
+    if (_showDetails) return;
+
+    // 1. Reveal Answer
+    setState(() {
+      _controller.text = currentWord.word;
+      _isCorrect = false;
+      _showDetails = true;
+    });
+    _speak();
+
+    // 2. Update SRS (Forgot)
+    await FirestoreService().markWordAsForgot(currentWord);
+
+    // 3. Auto-advance after 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        if (_currentIndex < _sessionWords.length - 1) {
+          _nextWord();
+        } else {
+          _showCompletionDialog();
+        }
+      }
+    });
   }
 
   void _nextWord() {
@@ -195,6 +219,13 @@ class _LearningScreenState extends State<LearningScreen> {
                     : _checkAnswer,
                 child: Text(_showDetails ? 'Next' : 'Check'),
               ),
+              if (!_showDetails) ...[
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _onSkipPressed,
+                  child: const Text('Bỏ qua (Skip)'),
+                ),
+              ],
               const SizedBox(height: 30),
               if (_showDetails) ...[
                 const Divider(),

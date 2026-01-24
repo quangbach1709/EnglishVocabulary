@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../models/word.dart';
+import '../services/firestore_service.dart';
 
 class GameScreen extends StatefulWidget {
   final List<Word> words;
@@ -82,6 +83,27 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
+  Future<void> _onSkipPressed() async {
+    if (_showDetails) return;
+
+    // 1. Reveal Answer
+    setState(() {
+      _showDetails = true;
+      _isCorrect = false;
+    });
+    _speak();
+
+    // 2. Update SRS (Forgot)
+    await FirestoreService().markWordAsForgot(_targetWord);
+
+    // 3. Auto-advance after 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        _nextQuestion();
+      }
+    });
+  }
+
   Future<void> _speak() async {
     await flutterTts.speak(_targetWord.word);
   }
@@ -152,6 +174,11 @@ class _GameScreenState extends State<GameScreen> {
               );
             }),
             const SizedBox(height: 20),
+            if (!_showDetails)
+              TextButton(
+                onPressed: _onSkipPressed,
+                child: const Text('Bỏ qua (Skip)'),
+              ),
             if (_isCorrect == false)
               const Text(
                 'Incorrect! Try again.',

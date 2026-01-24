@@ -73,6 +73,24 @@ class FirestoreService {
     }
   }
 
+  /// Mark word as 'Forgot' (Reset SRS)
+  Future<void> markWordAsForgot(Word word) async {
+    try {
+      final updatedWord = word.copyWith(
+        status: 0, // Red / Forgot
+        interval: 0, // Reset interval
+        nextReviewDate: DateTime.now(), // Review immediately
+        easeFactor: (word.easeFactor - 0.2).clamp(
+          1.3,
+          2.5,
+        ), // Reduce ease factor slightly
+      );
+      await updateWord(updatedWord);
+    } catch (e) {
+      throw FirestoreException('Failed to mark word as forgot: $e');
+    }
+  }
+
   /// Updates a word completely
   Future<void> updateWord(Word word) async {
     try {
