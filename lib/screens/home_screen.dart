@@ -9,6 +9,7 @@ import 'game_screen.dart';
 import 'settings_screen.dart';
 import 'grammar_list_screen.dart';
 import 'flashcard_screen.dart';
+import '../services/firestore_service.dart'; // Import service
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -486,11 +487,21 @@ class HomeScreen extends StatelessWidget {
             // Flashcard Mode - SRS based
             ListTile(
               leading: const Icon(Icons.flip, color: Colors.purple),
-              title: const Text('Flashcard'),
-              subtitle: const Text('SRS-based review with flip cards'),
+              title: const Text('Flashcard (Normal Review)'),
+              subtitle: const Text('SRS-based review (Updates schedule)'),
               onTap: () {
                 Navigator.pop(context);
                 _startFlashcardReview(context, provider);
+              },
+            ),
+            // Cram Mode - Hard words only
+            ListTile(
+              leading: const Icon(Icons.whatshot, color: Colors.deepOrange),
+              title: const Text('🔥 Ôn cấp tốc (Flashcard - Cram)'),
+              subtitle: const Text('Review hard words only (No SRS update)'),
+              onTap: () {
+                Navigator.pop(context);
+                _startCramReview(context);
               },
             ),
             const Divider(),
@@ -615,5 +626,52 @@ class HomeScreen extends StatelessWidget {
       context,
       MaterialPageRoute(builder: (context) => GameScreen(words: wordsToReview)),
     );
+  }
+
+  /// Cram Mode: Fetches words with status 0 or 1 from Firestore
+  Future<void> _startCramReview(BuildContext context) async {
+    try {
+      final cramWords = await FirestoreService().getCramWords();
+
+      if (context.mounted) {
+        if (cramWords.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No hard words found to cram! You are doing great!',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cramming ${cramWords.length} words...'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => FlashcardScreen(
+              words: cramWords,
+              isCramMode: true, // Enable Cram Mode
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading cram words: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

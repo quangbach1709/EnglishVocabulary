@@ -57,6 +57,18 @@ class FirestoreService {
     }
   }
 
+  /// Fetches "Cram" words (Status 0 or 1: Again/Forgot or Hard)
+  Future<List<Word>> getCramWords() async {
+    try {
+      final querySnapshot = await _vocabularyCollection
+          .where('status', whereIn: [0, 1])
+          .get();
+      return querySnapshot.docs.map((doc) => Word.fromMap(doc.data())).toList();
+    } catch (e) {
+      throw FirestoreException('Failed to fetch cram words: $e');
+    }
+  }
+
   /// Updates the status and nextReviewDate for a specific word
   Future<void> updateWordStatus(
     String englishWord,
