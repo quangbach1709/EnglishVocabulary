@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/tts_service.dart';
+import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
+import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -11,171 +14,361 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _apiKeyController = TextEditingController();
-  final _modelNameController = TextEditingController();
-  late Box _settingsBox;
+  final _modelController = TextEditingController();
+  final _firestoreService = FirestoreService();
 
-  // TTS Settings
+  // State variables
+  bool _isLoading = true;
+  bool _obscureApiKey = true;
   double _speechRate = 0.5;
   String _selectedLanguage = 'en-US';
 
   @override
   void initState() {
     super.initState();
-    _settingsBox = Hive.box('settings');
-    _apiKeyController.text = _settingsBox.get('apiKey', defaultValue: '');
-    _modelNameController.text = _settingsBox.get(
-      'modelName',
-      defaultValue: 'gemini-1.5-flash',
-    );
-
-    // Load TTS settings
-    _speechRate = TtsService.instance.speechRate;
-    _selectedLanguage = TtsService.instance.language;
+    _loadSettings();
   }
 
   @override
   void dispose() {
     _apiKeyController.dispose();
-    _modelNameController.dispose();
+    _modelController.dispose();
     super.dispose();
   }
 
-  Future<void> _saveSettings() async {
-    await _settingsBox.put('apiKey', _apiKeyController.text.trim());
-    await _settingsBox.put('modelName', _modelNameController.text.trim());
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Settings saved!')));
-      Navigator.pop(context);
+  /// Load settings from Firestore
+  Future<void> _loadSettings() async {
+    try {
+      final settings = await _firestoreService.fetchUserSettings();
+      setState(() {
+        _apiKeyController.text = settings['apiKey'] ?? '';
+        final model = settings['modelName'] as String?;
+        _modelController.text = (model != null && model.isNotEmpty)
+            ? model
+            : 'gemini-1.5-flash';
+        _speechRate = (settings['speechRate'] ?? 0.5).toDouble();
+        _selectedLanguage = settings['ttsLanguage'] ?? 'en-US';
+        _isLoading = false;
+      });
+
+      // Sync TTS service with cloud settings
+      await TtsService.instance.setSpeechRate(_speechRate);
+      await TtsService.instance.setLanguage(_selectedLanguage);
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi tải cài đặt: $e')));
+      }
     }
   }
 
+  /// Save a single setting to Firestore
+  Future<void> _saveSetting(String key, dynamic value) async {
+    try {
+      await _firestoreService.updateSetting(key, value);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi lưu: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Test TTS with current settings
   void _testAudio() {
     TtsService.instance.speak('This is an example of the English voice.');
   }
 
+  /// Handle logout
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Đăng xuất'),
+        content: const Text('Bạn có chắc muốn đăng xuất?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Đăng xuất'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await AuthService.instance.signOut();
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          (route) => false,
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ==========================================
-            // Audio Settings Section
-            // ==========================================
-            const Text(
-              'Cài đặt âm thanh',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
+    final user = FirebaseAuth.instance.currentUser;
 
-            // Speech Rate Slider
-            Row(
-              children: [
-                const Icon(Icons.speed, color: Colors.blue),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Tốc độ đọc: ${_speechRate.toStringAsFixed(1)}x'),
-                      Slider(
-                        value: _speechRate,
-                        min: 0.1,
-                        max: 1.0,
-                        divisions: 9,
-                        label: '${_speechRate.toStringAsFixed(1)}x',
-                        onChanged: (value) async {
-                          setState(() => _speechRate = value);
-                          await TtsService.instance.setSpeechRate(value);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Cài đặt'), elevation: 0),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ==========================================
+                  // Section A: AI Configuration
+                  // ==========================================
+                  _buildSectionHeader('Cấu hình AI', Icons.psychology),
+                  const SizedBox(height: 12),
+
+                  // API Key with visibility toggle
+                  TextField(
+                    controller: _apiKeyController,
+                    obscureText: _obscureApiKey,
+                    decoration: InputDecoration(
+                      labelText: 'Gemini API Key',
+                      border: const OutlineInputBorder(),
+                      hintText: 'Nhập API Key của bạn',
+                      prefixIcon: const Icon(Icons.key),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureApiKey
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                        onPressed: () {
+                          setState(() => _obscureApiKey = !_obscureApiKey);
                         },
+                      ),
+                    ),
+                    onChanged: (value) {
+                      // Debounce: save after user stops typing
+                      Future.delayed(const Duration(milliseconds: 500), () {
+                        if (_apiKeyController.text == value) {
+                          _saveSetting('apiKey', value.trim());
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Model Name TextField
+                  TextField(
+                    controller: _modelController,
+                    decoration: const InputDecoration(
+                      labelText: 'Model Name',
+                      border: OutlineInputBorder(),
+                      hintText: 'e.g., gemini-1.5-flash',
+                      prefixIcon: Icon(Icons.smart_toy),
+                    ),
+                    onChanged: (value) {
+                      Future.delayed(const Duration(milliseconds: 500), () {
+                        if (_modelController.text == value) {
+                          _saveSetting('modelName', value.trim());
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Mặc định: gemini-1.5-flash',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+
+                  const Divider(height: 32),
+
+                  // ==========================================
+                  // Section B: Audio & Voice (TTS)
+                  // ==========================================
+                  _buildSectionHeader('Cài đặt âm thanh', Icons.volume_up),
+                  const SizedBox(height: 12),
+
+                  // Speech Rate Slider
+                  Row(
+                    children: [
+                      const Icon(Icons.speed, color: Colors.blue),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tốc độ đọc: ${_speechRate.toStringAsFixed(1)}x',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Slider(
+                              value: _speechRate,
+                              min: 0.1,
+                              max: 1.0,
+                              divisions: 9,
+                              label: '${_speechRate.toStringAsFixed(1)}x',
+                              onChanged: (value) {
+                                setState(() => _speechRate = value);
+                                // Update TTS immediately for preview
+                                TtsService.instance.setSpeechRate(value);
+                              },
+                              onChangeEnd: (value) async {
+                                // Save to Firestore only when drag ends
+                                await _saveSetting('speechRate', value);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.play_circle,
+                          color: Colors.green,
+                          size: 32,
+                        ),
+                        tooltip: 'Thử giọng',
+                        onPressed: _testAudio,
                       ),
                     ],
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.volume_up, color: Colors.green),
-                  tooltip: 'Test Audio',
-                  onPressed: _testAudio,
-                ),
-              ],
-            ),
 
-            const SizedBox(height: 8),
+                  const SizedBox(height: 8),
 
-            // Accent Dropdown
-            Row(
-              children: [
-                const Icon(Icons.language, color: Colors.orange),
-                const SizedBox(width: 8),
-                const Text('Giọng đọc: '),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButton<String>(
-                    value: _selectedLanguage,
-                    isExpanded: true,
-                    items: TtsService.availableAccents.map((accent) {
-                      return DropdownMenuItem<String>(
-                        value: accent['code'],
-                        child: Text(accent['name']!),
-                      );
-                    }).toList(),
-                    onChanged: (value) async {
-                      if (value != null) {
-                        setState(() => _selectedLanguage = value);
-                        await TtsService.instance.setLanguage(value);
-                      }
-                    },
+                  // Language/Accent Dropdown
+                  Row(
+                    children: [
+                      const Icon(Icons.language, color: Colors.orange),
+                      const SizedBox(width: 12),
+                      const Text('Giọng đọc: '),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButton<String>(
+                          value: _selectedLanguage,
+                          isExpanded: true,
+                          items: TtsService.availableAccents.map((accent) {
+                            return DropdownMenuItem<String>(
+                              value: accent['code'],
+                              child: Text(accent['name']!),
+                            );
+                          }).toList(),
+                          onChanged: (value) async {
+                            if (value != null) {
+                              setState(() => _selectedLanguage = value);
+                              await TtsService.instance.setLanguage(value);
+                              await _saveSetting('ttsLanguage', value);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
 
-            const Divider(height: 32),
+                  const Divider(height: 32),
 
-            // ==========================================
-            // Gemini Configuration Section
-            // ==========================================
-            const Text(
-              'Gemini Configuration',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _apiKeyController,
-              decoration: const InputDecoration(
-                labelText: 'API Key',
-                border: OutlineInputBorder(),
-                hintText: 'Enter your Gemini API Key',
+                  // ==========================================
+                  // Section C: Account
+                  // ==========================================
+                  _buildSectionHeader('Tài khoản', Icons.person),
+                  const SizedBox(height: 12),
+
+                  // User Email (read-only)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Colors.blue,
+                          child: Text(
+                            (user?.email?.isNotEmpty == true)
+                                ? user!.email![0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                user?.displayName ?? 'Người dùng',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              Text(
+                                user?.email ?? 'Chưa đăng nhập',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Logout Button
+                  SizedBox(
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: _handleLogout,
+                      icon: const Icon(Icons.logout),
+                      label: const Text(
+                        'Đăng xuất',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+                ],
               ),
-              obscureText: true,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _modelNameController,
-              decoration: const InputDecoration(
-                labelText: 'Model Name',
-                border: OutlineInputBorder(),
-                hintText: 'e.g., gemini-1.5-flash',
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Default: gemini-1.5-flash',
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _saveSettings,
-              child: const Text('Save Settings'),
-            ),
-          ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.blue.shade700),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.blue.shade700,
+          ),
         ),
-      ),
+      ],
     );
   }
 }

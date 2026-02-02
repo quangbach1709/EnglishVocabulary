@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/word.dart';
 import '../models/grammar_topic.dart';
 
@@ -12,9 +13,18 @@ class FirestoreService {
   // Firestore instance
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Collection paths
-  static const String _vocabularyPath = 'users/test_user/vocabulary';
-  static const String _grammarPath = 'users/test_user/grammar_topics';
+  // Dynamic user ID from Firebase Auth
+  String get _userId {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw FirestoreException('User not authenticated');
+    }
+    return user.uid;
+  }
+
+  // Collection paths (now dynamic based on authenticated user)
+  String get _vocabularyPath => 'users/$_userId/vocabulary';
+  String get _grammarPath => 'users/$_userId/grammar_topics';
 
   /// Reference to the vocabulary collection
   CollectionReference<Map<String, dynamic>> get _vocabularyCollection =>
@@ -228,6 +238,52 @@ class FirestoreService {
       await _grammarCollection.doc(topicId).delete();
     } catch (e) {
       throw FirestoreException('Failed to delete grammar topic: $e');
+    }
+  }
+
+  // ============================================
+  // User Settings Methods
+  // ============================================
+
+  /// Document reference for user settings
+  DocumentReference<Map<String, dynamic>> get _settingsDoc =>
+      _firestore.collection('users').doc(_userId);
+
+  /// Fetch user settings from Firestore
+  /// Returns a Map with keys: apiKey, modelName, speechRate, ttsLanguage
+  Future<Map<String, dynamic>> fetchUserSettings() async {
+    try {
+      final doc = await _settingsDoc.get();
+      if (doc.exists && doc.data() != null) {
+        return doc.data()!;
+      }
+      // Return defaults if no settings exist
+      return {
+        'apiKey': '',
+        'modelName': 'gemini-1.5-flash',
+        'speechRate': 0.5,
+        'ttsLanguage': 'en-US',
+      };
+    } catch (e) {
+      throw FirestoreException('Failed to fetch user settings: $e');
+    }
+  }
+
+  /// Save user settings to Firestore (merge to preserve other fields)
+  Future<void> saveUserSettings(Map<String, dynamic> settings) async {
+    try {
+      await _settingsDoc.set(settings, SetOptions(merge: true));
+    } catch (e) {
+      throw FirestoreException('Failed to save user settings: $e');
+    }
+  }
+
+  /// Update a single setting field
+  Future<void> updateSetting(String key, dynamic value) async {
+    try {
+      await _settingsDoc.set({key: value}, SetOptions(merge: true));
+    } catch (e) {
+      throw FirestoreException('Failed to update setting: $e');
     }
   }
 }

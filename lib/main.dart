@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -9,8 +10,10 @@ import 'firebase_options.dart';
 import 'providers/word_provider.dart';
 import 'providers/grammar_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
 import 'services/notification_service.dart';
 import 'services/tts_service.dart';
+import 'services/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +23,6 @@ void main() async {
     await dotenv.load(fileName: ".env");
   } catch (e) {
     debugPrint("Error loading .env file: $e");
-    // If .env is missing, Firebase init might fail if keys are missing
   }
 
   // Initialize Firebase
@@ -32,15 +34,6 @@ void main() async {
 
   // Initialize TTS Service (loads saved settings)
   await TtsService.instance.init();
-
-  // Initialize Notification Service
-  final notificationService = NotificationService();
-  await notificationService.initialize();
-  await notificationService.requestPermissions();
-
-  // Schedule notifications for the next 7 days
-  // This runs asynchronously after app starts
-  notificationService.scheduleNext7Days();
 
   runApp(
     MultiProvider(
@@ -65,7 +58,58 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: const AuthWrapper(),
+    );
+  }
+}
+
+/// Wrapper that checks auth state and shows appropriate screen
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  @override
+  void initState() {
+    super.initState();
+    _initializeNotificationsIfLoggedIn();
+  }
+
+  Future<void> _initializeNotificationsIfLoggedIn() async {
+    if (AuthService.instance.isSignedIn) {
+      // Initialize notifications only when user is logged in
+      final notificationService = NotificationService();
+      await notificationService.initialize();
+      await notificationService.requestPermissions();
+      notificationService.scheduleNext7Days();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        // Show loading while checking auth state
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // User is logged in
+        if (snapshot.hasData && snapshot.data != null) {
+          // Re-initialize notifications when user logs in
+          _initializeNotificationsIfLoggedIn();
+          return const HomeScreen();
+        }
+
+        // User is not logged in
+        return const LoginScreen();
+      },
     );
   }
 }
