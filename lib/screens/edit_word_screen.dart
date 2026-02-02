@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/word.dart';
 import '../providers/word_provider.dart';
+import '../services/tts_service.dart';
 
 class EditWordScreen extends StatefulWidget {
   final Word word;
@@ -43,6 +44,10 @@ class _EditWordScreenState extends State<EditWordScreen> {
     for (var c in _exampleEnControllers) c.dispose();
     for (var c in _exampleViControllers) c.dispose();
     super.dispose();
+  }
+
+  Future<void> _speak(String text) async {
+    await TtsService.instance.speak(text);
   }
 
   Future<void> _refreshData() async {
@@ -172,7 +177,14 @@ class _EditWordScreenState extends State<EditWordScreen> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: _ipaController,
-                    decoration: const InputDecoration(labelText: 'IPA'),
+                    decoration: InputDecoration(
+                      labelText: 'IPA',
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.volume_up, color: Colors.blue),
+                        onPressed: () => _speak(_wordController.text),
+                        tooltip: 'Listen',
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextField(

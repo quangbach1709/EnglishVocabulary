@@ -10,6 +10,31 @@ import 'settings_screen.dart';
 import 'grammar_list_screen.dart';
 import 'flashcard_screen.dart';
 
+// Helper classes for flattened list approach
+abstract class ListItem {}
+
+class GroupHeaderItem implements ListItem {
+  final String? groupName;
+  final List<Word> words;
+  final bool isExpanded;
+  final bool isSelected;
+
+  GroupHeaderItem({
+    required this.groupName,
+    required this.words,
+    required this.isExpanded,
+    required this.isSelected,
+  });
+}
+
+class WordItem implements ListItem {
+  final Word word;
+  final bool isGrouped;
+  final bool isLastInGroup;
+
+  WordItem(this.word, {this.isGrouped = false, this.isLastInGroup = false});
+}
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -149,86 +174,126 @@ class HomeScreen extends StatelessWidget {
         return a.compareTo(b);
       });
 
-    return ListView.builder(
-      itemCount: sortedKeys.length,
-      itemBuilder: (context, index) {
-        final groupName = sortedKeys[index];
-        final words = groupedWords[groupName]!;
-        final isCollapsed =
-            groupName != null && provider.collapsedGroups.contains(groupName);
+    // Flatten the list: GroupHeaders + WordItems (if expanded)
+    final List<ListItem> flatList = [];
 
-        // Check if all words in this group are selected
-        final isGroupSelected = words.every(
-          (w) => provider.selectedWords.contains(w),
+    for (var groupName in sortedKeys) {
+      final words = groupedWords[groupName]!;
+      final isCollapsed =
+          groupName != null && provider.collapsedGroups.contains(groupName);
+      final isGroupSelected = words.every(
+        (w) => provider.selectedWords.contains(w),
+      );
+
+      // Add Group Header (even for null group/ungrouped section if we want headers)
+      // For ungrouped (null), we might still want a header or just separate them.
+      // Current design treated 'null' group as just a header too.
+      if (groupName != null) {
+        flatList.add(
+          GroupHeaderItem(
+            groupName: groupName,
+            words: words,
+            isExpanded: !isCollapsed,
+            isSelected: isGroupSelected,
+          ),
         );
+      }
 
-        Widget groupContent = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (groupName != null)
-              InkWell(
-                onTap: () => provider.toggleGroupExpansion(groupName),
-                onLongPress: () =>
-                    _showGroupOptions(context, provider, groupName),
-                child: Container(
-                  color: Colors.grey[200],
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 12.0,
-                  ),
-                  child: Row(
-                    children: [
-                      Checkbox(
-                        value: isGroupSelected,
-                        onChanged: (_) =>
-                            provider.toggleGroupSelection(groupName),
-                      ),
-                      Icon(isCollapsed ? Icons.expand_more : Icons.expand_less),
-                      const SizedBox(width: 8),
-                      Text(
-                        groupName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text('${words.length} words'),
-                    ],
-                  ),
-                ),
-              ),
-            if (!isCollapsed)
-              ...words.map((word) => _buildWordTile(context, provider, word)),
-          ],
-        );
-
-        if (groupName != null) {
-          return Container(
-            margin: const EdgeInsets.all(8.0),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.blue.withOpacity(0.5), width: 2),
-              borderRadius: BorderRadius.circular(12),
+      // Add Words if expanded (or ALWAYS for ungrouped if we treat it so)
+      if (groupName == null || !isCollapsed) {
+        for (int i = 0; i < words.length; i++) {
+          flatList.add(
+            WordItem(
+              words[i],
+              isGrouped: groupName != null,
+              isLastInGroup: groupName != null && i == words.length - 1,
             ),
-            clipBehavior: Clip.antiAlias,
-            child: groupContent,
           );
         }
+      }
+    }
 
-        return groupContent;
+    return ListView.builder(
+      itemCount: flatList.length,
+      itemBuilder: (context, index) {
+        final item = flatList[index];
+
+        if (item is GroupHeaderItem) {
+          return _buildGroupHeader(context, provider, item);
+        } else if (item is WordItem) {
+          return _buildWordTile(
+            context,
+            provider,
+            item.word,
+            isGrouped: item.isGrouped,
+            isLastInGroup: item.isLastInGroup,
+          );
+        }
+        return const SizedBox.shrink();
       },
+    );
+  }
+
+  Widget _buildGroupHeader(
+    BuildContext context,
+    WordProvider provider,
+    GroupHeaderItem item,
+  ) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 0), // Top margin separate
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.vertical(
+          top: const Radius.circular(12),
+          bottom: item.isExpanded ? Radius.zero : const Radius.circular(12),
+        ),
+        border: Border.all(color: Colors.blue.withOpacity(0.5), width: 1),
+      ),
+      child: InkWell(
+        onTap: () => provider.toggleGroupExpansion(item.groupName!),
+        onLongPress: () =>
+            _showGroupOptions(context, provider, item.groupName!),
+        borderRadius: BorderRadius.vertical(
+          top: const Radius.circular(12),
+          bottom: item.isExpanded ? Radius.zero : const Radius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Row(
+            children: [
+              Checkbox(
+                value: item.isSelected,
+                onChanged: (_) => provider.toggleGroupSelection(item.groupName),
+              ),
+              Icon(item.isExpanded ? Icons.expand_less : Icons.expand_more),
+              const SizedBox(width: 8),
+              Text(
+                item.groupName!,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              const Spacer(),
+              Text('${item.words.length} words'),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildWordTile(
     BuildContext context,
     WordProvider provider,
-    Word word,
-  ) {
+    Word word, {
+    bool isGrouped = false,
+    bool isLastInGroup = false,
+  }) {
     final isSelected = provider.selectedWords.contains(word);
     final hasGroup = word.group != null;
 
-    return Dismissible(
+    Widget tileContent = Dismissible(
       key: ObjectKey(word),
       direction: DismissDirection.horizontal,
       background: Container(
@@ -342,6 +407,29 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
     );
+
+    if (isGrouped) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8.0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            left: BorderSide(color: Colors.blue.withOpacity(0.5), width: 1),
+            right: BorderSide(color: Colors.blue.withOpacity(0.5), width: 1),
+            bottom: isLastInGroup
+                ? BorderSide(color: Colors.blue.withOpacity(0.5), width: 1)
+                : BorderSide.none,
+          ),
+          borderRadius: isLastInGroup
+              ? const BorderRadius.vertical(bottom: Radius.circular(12))
+              : null,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: tileContent,
+      );
+    }
+
+    return tileContent;
   }
 
   /// Shows dialog to add an ungrouped word to an existing group

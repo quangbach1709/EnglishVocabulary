@@ -10,6 +10,7 @@ import 'providers/word_provider.dart';
 import 'providers/grammar_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
+import 'services/tts_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,9 @@ void main() async {
   // Initialize Hive for Settings
   await Hive.initFlutter();
   await Hive.openBox('settings');
+
+  // Initialize TTS Service (loads saved settings)
+  await TtsService.instance.init();
 
   // Initialize Notification Service
   final notificationService = NotificationService();
