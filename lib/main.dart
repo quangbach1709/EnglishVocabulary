@@ -9,6 +9,7 @@ import 'firebase_options.dart';
 import 'providers/word_provider.dart';
 import 'providers/grammar_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,15 @@ void main() async {
   // Initialize Hive for Settings
   await Hive.initFlutter();
   await Hive.openBox('settings');
+
+  // Initialize Notification Service
+  final notificationService = NotificationService();
+  await notificationService.initialize();
+  await notificationService.requestPermissions();
+
+  // Schedule notifications for the next 7 days
+  // This runs asynchronously after app starts
+  notificationService.scheduleNext7Days();
 
   runApp(
     MultiProvider(

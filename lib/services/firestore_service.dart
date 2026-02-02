@@ -69,6 +69,25 @@ class FirestoreService {
     }
   }
 
+  /// Fetches priority words for notifications (Status 0 or 1), limited to 14 words
+  /// Used by NotificationService to schedule varied daily reminders
+  Future<List<Word>> getPriorityWords() async {
+    try {
+      final querySnapshot = await _vocabularyCollection
+          .where('status', whereIn: [0, 1])
+          .limit(14)
+          .get();
+      final words = querySnapshot.docs
+          .map((doc) => Word.fromMap(doc.data()))
+          .toList();
+      // Shuffle for variety in notifications
+      words.shuffle();
+      return words;
+    } catch (e) {
+      throw FirestoreException('Failed to fetch priority words: $e');
+    }
+  }
+
   /// Updates the status and nextReviewDate for a specific word
   Future<void> updateWordStatus(
     String englishWord,

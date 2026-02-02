@@ -44,6 +44,8 @@ dependencies:
   uuid: ^4.3.3
   firebase_core: ^3.9.0
   cloud_firestore: ^5.6.4
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.10.0
 
 dev_dependencies:
   flutter_test:

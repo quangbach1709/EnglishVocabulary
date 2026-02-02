@@ -186,6 +186,19 @@ class WordProvider with ChangeNotifier {
     await loadWords();
   }
 
+  /// Adds a single word to an existing group
+  Future<void> addWordToGroup(Word word, String groupName) async {
+    final updatedWord = word.copyWith(group: groupName);
+    await _repository.updateWord(updatedWord);
+    await loadWords();
+  }
+
+  /// Gets list of all existing group names (non-null)
+  List<String> get existingGroups {
+    return _words.map((w) => w.group).whereType<String>().toSet().toList()
+      ..sort();
+  }
+
   /// Deletes all words in a group
   Future<void> deleteGroup(String groupName) async {
     final wordsInGroup = _words.where((w) => w.group == groupName).toList();

@@ -226,12 +226,11 @@ class HomeScreen extends StatelessWidget {
     Word word,
   ) {
     final isSelected = provider.selectedWords.contains(word);
+    final hasGroup = word.group != null;
 
     return Dismissible(
       key: ObjectKey(word),
-      direction: word.group != null
-          ? DismissDirection.horizontal
-          : DismissDirection.startToEnd,
+      direction: DismissDirection.horizontal,
       background: Container(
         color: Colors.red,
         alignment: Alignment.centerLeft,
@@ -239,23 +238,26 @@ class HomeScreen extends StatelessWidget {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       secondaryBackground: Container(
-        color: Colors.orange,
+        color: hasGroup ? Colors.orange : Colors.green,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: const Icon(Icons.folder_off, color: Colors.white),
+        child: Icon(
+          hasGroup ? Icons.folder_off : Icons.folder_open,
+          color: Colors.white,
+        ),
       ),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          // Delete
+          // Delete word
           return await showDialog(
             context: context,
             builder: (context) => AlertDialog(
-              title: const Text('Delete Word?'),
-              content: Text('Are you sure you want to delete "${word.word}"?'),
+              title: const Text('Xóa từ?'),
+              content: Text('Bạn có chắc muốn xóa "${word.word}"?'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
+                  child: const Text('Hủy'),
                 ),
                 TextButton(
                   onPressed: () {
@@ -263,15 +265,43 @@ class HomeScreen extends StatelessWidget {
                     Navigator.of(context).pop(true);
                   },
                   style: TextButton.styleFrom(foregroundColor: Colors.red),
-                  child: const Text('Delete'),
+                  child: const Text('Xóa'),
                 ),
               ],
             ),
           );
         } else if (direction == DismissDirection.endToStart) {
-          // Ungroup
-          await provider.removeWordFromGroup(word);
-          return false; // Don't dismiss the row, just update state
+          if (hasGroup) {
+            // Has group - show confirmation to remove from group
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Xóa khỏi nhóm?'),
+                content: Text(
+                  'Bạn có chắc muốn xóa "${word.word}" khỏi nhóm "${word.group}"?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Hủy'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                    child: const Text('Xóa khỏi nhóm'),
+                  ),
+                ],
+              ),
+            );
+            if (confirmed == true) {
+              await provider.removeWordFromGroup(word);
+            }
+            return false; // Don't dismiss the row
+          } else {
+            // No group - show group picker
+            await _showAddToGroupDialog(context, provider, word);
+            return false; // Don't dismiss the row
+          }
         }
         return false;
       },
@@ -309,6 +339,81 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Shows dialog to add an ungrouped word to an existing group
+  Future<void> _showAddToGroupDialog(
+    BuildContext context,
+    WordProvider provider,
+    Word word,
+  ) async {
+    final existingGroups = provider.existingGroups;
+
+    if (existingGroups.isEmpty) {
+      // No groups exist - show message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chưa có nhóm nào. Hãy tạo nhóm trước!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Thêm "${word.word}" vào nhóm',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: existingGroups.length,
+                itemBuilder: (context, index) {
+                  final groupName = existingGroups[index];
+                  return ListTile(
+                    leading: const Icon(Icons.folder, color: Colors.blue),
+                    title: Text(groupName),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await provider.addWordToGroup(word, groupName);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Đã thêm "${word.word}" vào "$groupName"',
+                            ),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
