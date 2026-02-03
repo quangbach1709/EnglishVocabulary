@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -6,15 +7,14 @@ import 'package:timezone/data/latest_all.dart' as tz_data;
 import '../models/word.dart';
 import 'firestore_service.dart';
 
-/// Enum representing the 3 psychological notification strategies
-enum NotificationStrategy {
-  microQuiz, // Strategy A: 40% - Action buttons with quiz
-  fillBlank, // Strategy B: 30% - Fill-in-the-blank
-  emotional, // Strategy C: 30% - SOS urgency trigger
+/// Enum representing game modes for interactive notifications
+enum GameMode {
+  multipleChoice, // Game A: Chọn từ đúng
+  directInput, // Game B: Điền từ
 }
 
-/// Singleton service for managing vocabulary reminder notifications
-/// with 3 psychological strategies for better retention
+/// Singleton service for interactive vocabulary learning notifications
+/// Features: Spaced repetition, Multiple Choice, Direct Input games
 class NotificationService {
   // Singleton pattern
   static final NotificationService _instance = NotificationService._internal();
@@ -25,33 +25,45 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   final FirestoreService _firestoreService = FirestoreService();
 
-  // Notification channel constants for Android
-  static const String _channelId = 'vocabulary_reminders';
-  static const String _channelName = 'Vocabulary Reminders';
+  // Notification channel constants
+  static const String _channelId = 'vocabulary_games';
+  static const String _channelName = 'Vocabulary Games';
   static const String _channelDescription =
-      'Daily vocabulary review notifications with interactive quizzes';
+      'Interactive vocabulary learning games with quizzes';
 
-  // Action button identifiers
-  static const String actionMarkKnown = 'MARK_KNOWN';
+  // ============================================
+  // Action Button Identifiers
+  // ============================================
   static const String actionOpenApp = 'OPEN_APP';
-  // Legacy action identifiers for Micro-Quiz strategy
-  static const String actionCorrect = 'action_correct';
-  static const String actionDistractor = 'action_distractor';
+  static const String actionShowAnswer = 'SHOW_ANSWER';
+  static const String actionCorrect = 'CORRECT';
+  static const String actionWrong1 = 'WRONG_1';
+  static const String actionWrong2 = 'WRONG_2';
+  static const String inputReplyKey = 'INPUT_REPLY';
 
-  // Scheduling configuration
-  static const int _notificationHour = 9; // 9:00 AM
-  static const int _notificationMinute = 0;
+  // ============================================
+  // Scheduling Configuration: 3 times per day
+  // ============================================
+  static const List<Map<String, int>> _dailySchedules = [
+    {'hour': 8, 'minute': 0}, // Morning
+    {'hour': 12, 'minute': 0}, // Noon
+    {'hour': 20, 'minute': 0}, // Evening
+  ];
 
-  /// Callback for handling notification taps
-  /// Returns the wordId from payload so the app can navigate to flashcard
+  // ============================================
+  // Navigation State
+  // ============================================
   static String? _lastTappedWordId;
   static String? get lastTappedWordId => _lastTappedWordId;
   static void clearLastTappedWordId() => _lastTappedWordId = null;
 
-  /// Flag to indicate if we should navigate to flashcard
   static bool _shouldNavigateToFlashcard = false;
   static bool get shouldNavigateToFlashcard => _shouldNavigateToFlashcard;
   static void clearNavigationFlag() => _shouldNavigateToFlashcard = false;
+
+  // ============================================
+  // Initialization
+  // ============================================
 
   /// Initialize the notification service
   Future<void> initialize() async {
@@ -83,7 +95,7 @@ class NotificationService {
           _onBackgroundNotificationResponse,
     );
 
-    // Create notification channel for Android
+    // Create notification channel
     await _createNotificationChannel();
 
     debugPrint('NotificationService: Initialized successfully');
@@ -115,7 +127,7 @@ class NotificationService {
     return granted;
   }
 
-  /// Create Android notification channel with action buttons support
+  /// Create Android notification channel
   Future<void> _createNotificationChannel() async {
     const channel = AndroidNotificationChannel(
       _channelId,
@@ -133,37 +145,145 @@ class NotificationService {
         ?.createNotificationChannel(channel);
   }
 
+  // ============================================
+  // Vocabulary Selection (Spaced Repetition)
+  // ============================================
+
+  /// Select a word using spaced repetition algorithm
+  /// Priority 1 (80%): status == 0 (Forgot) or status == 1 (Hard)
+  /// Priority 2 (20%): status >= 2 (Mastered) for review
+  Future<Word?> _selectWordBySpacedRepetition(List<Word> allWords) async {
+    if (allWords.isEmpty) return null;
+
+    final random = Random();
+    final roll = random.nextDouble();
+
+    // Priority words: Forgot (0) or Hard (1)
+    final priorityWords = allWords
+        .where((w) => w.status == 0 || w.status == 1)
+        .toList();
+
+    // Review words: Good (2) or Easy (3)
+    final reviewWords = allWords.where((w) => w.status >= 2).toList();
+
+    List<Word> pool;
+
+    if (roll < 0.80 && priorityWords.isNotEmpty) {
+      // 80% chance: Pick from priority words
+      pool = priorityWords;
+      debugPrint(
+        'NotificationService: Selected from priority pool (${pool.length} words)',
+      );
+    } else if (reviewWords.isNotEmpty) {
+      // 20% chance: Pick from review words
+      pool = reviewWords;
+      debugPrint(
+        'NotificationService: Selected from review pool (${pool.length} words)',
+      );
+    } else {
+      // Fallback: Use all words
+      pool = allWords;
+      debugPrint(
+        'NotificationService: Fallback to all words (${pool.length} words)',
+      );
+    }
+
+    pool.shuffle();
+    return pool.first;
+  }
+
+  /// Get distractor words for multiple choice (different from target)
+  List<Word> _getDistractorWords(
+    Word targetWord,
+    List<Word> allWords,
+    int count,
+  ) {
+    final distractors = <Word>[];
+    final shuffled = List<Word>.from(allWords)..shuffle();
+
+    for (final word in shuffled) {
+      if (word.english != targetWord.english && distractors.length < count) {
+        distractors.add(word);
+      }
+    }
+
+    return distractors;
+  }
+
+  // ============================================
+  // Notification Response Handlers
+  // ============================================
+
   /// Handle notification response when app is in foreground/background
   static void _onNotificationResponse(NotificationResponse response) {
     debugPrint(
-      'NotificationService: Response - action: ${response.actionId}, payload: ${response.payload}',
+      'NotificationService: Response - action: ${response.actionId}, '
+      'payload: ${response.payload}, input: ${response.input}',
     );
 
     final notificationId = response.id;
-    final wordId = response.payload;
+    final payload = response.payload;
     final actionId = response.actionId;
+    final userInput = response.input;
 
-    if (wordId == null || wordId.isEmpty) {
+    // CRITICAL: Cancel the persistent notification immediately
+    if (notificationId != null) {
+      NotificationService()._cancelNotification(notificationId);
+    }
+
+    if (payload == null || payload.isEmpty) {
       debugPrint('NotificationService: No payload, ignoring');
       return;
     }
 
-    // Handle different actions
-    if (actionId == actionMarkKnown) {
-      // User tapped "I know this" - mark word as reviewed and cancel notification
-      _handleMarkKnown(wordId, notificationId);
-    } else if (actionId == actionOpenApp ||
-        actionId == actionCorrect ||
-        actionId == actionDistractor ||
-        actionId == null) {
-      // User tapped notification body, "Learn Now", or quiz buttons
-      // Set navigation flag and cancel notification
-      _lastTappedWordId = wordId;
-      _shouldNavigateToFlashcard = true;
-      if (notificationId != null) {
-        NotificationService()._cancelNotification(notificationId);
-      }
-      debugPrint('NotificationService: Navigate to flashcard for "$wordId"');
+    // Parse payload JSON
+    Map<String, dynamic> payloadData;
+    try {
+      payloadData = jsonDecode(payload);
+    } catch (e) {
+      // Legacy payload format (just word ID)
+      payloadData = {'wordId': payload, 'type': 'unknown'};
+    }
+
+    final wordId = payloadData['wordId'] as String? ?? payload;
+    // gameType could be 'multipleChoice' or 'directInput' - used for logging
+    final correctAnswer = payloadData['correctAnswer'] as String? ?? '';
+
+    // Handle based on action
+    switch (actionId) {
+      case actionCorrect:
+        // User clicked correct answer
+        _handleCorrectAnswer(wordId);
+        debugPrint('NotificationService: Correct answer for "$wordId"');
+        break;
+
+      case actionWrong1:
+      case actionWrong2:
+        // User clicked wrong answer - navigate to learn
+        _lastTappedWordId = wordId;
+        _shouldNavigateToFlashcard = true;
+        debugPrint('NotificationService: Wrong answer, navigate to flashcard');
+        break;
+
+      case actionShowAnswer:
+        // Show answer - display a follow-up notification
+        NotificationService()._showAnswerNotification(wordId, correctAnswer);
+        break;
+
+      case actionOpenApp:
+      default:
+        // Check if there's user input (Direct Input mode)
+        if (userInput != null && userInput.isNotEmpty) {
+          _handleDirectInput(wordId, userInput, correctAnswer);
+        } else {
+          // Navigate to flashcard
+          _lastTappedWordId = wordId;
+          _shouldNavigateToFlashcard = true;
+          debugPrint(
+            'NotificationService: Navigate to flashcard for "$wordId"',
+          );
+        }
+        break;
     }
   }
 
@@ -171,51 +291,142 @@ class NotificationService {
   @pragma('vm:entry-point')
   static void _onBackgroundNotificationResponse(NotificationResponse response) {
     debugPrint(
-      'NotificationService: Background response - action: ${response.actionId}, payload: ${response.payload}',
+      'NotificationService: Background response - action: ${response.actionId}, '
+      'payload: ${response.payload}',
     );
 
     final notificationId = response.id;
-    final wordId = response.payload;
+    final payload = response.payload;
     final actionId = response.actionId;
 
-    if (wordId == null || wordId.isEmpty) return;
+    // Cancel the persistent notification
+    if (notificationId != null) {
+      NotificationService()._cancelNotification(notificationId);
+    }
 
-    if (actionId == actionMarkKnown) {
-      // Handle "I know this" in background
-      _handleMarkKnown(wordId, notificationId);
-    } else {
-      // Open app and navigate to flashcard
+    if (payload == null || payload.isEmpty) return;
+
+    // Parse payload
+    Map<String, dynamic> payloadData;
+    try {
+      payloadData = jsonDecode(payload);
+    } catch (e) {
+      payloadData = {'wordId': payload};
+    }
+
+    final wordId = payloadData['wordId'] as String? ?? payload;
+
+    if (actionId == actionCorrect) {
+      _handleCorrectAnswer(wordId);
+    } else if (actionId == actionWrong1 || actionId == actionWrong2) {
       _lastTappedWordId = wordId;
       _shouldNavigateToFlashcard = true;
-      if (notificationId != null) {
-        NotificationService()._cancelNotification(notificationId);
-      }
+    } else {
+      _lastTappedWordId = wordId;
+      _shouldNavigateToFlashcard = true;
     }
   }
 
-  /// Handle "I know this" action - update word status and cancel notification
-  static void _handleMarkKnown(String wordId, int? notificationId) {
-    debugPrint('NotificationService: Marking "$wordId" as known');
+  /// Handle correct answer - update word status
+  static void _handleCorrectAnswer(String wordId) {
+    debugPrint('NotificationService: Marking "$wordId" as reviewed');
 
-    // Update word status in Firestore (status 2 = Good)
     final firestoreService = FirestoreService();
     firestoreService
         .updateWordStatus(
           wordId,
-          2, // Status 2 = Good (Yellow)
-          DateTime.now().add(const Duration(days: 3)), // Next review in 3 days
+          2, // Status 2 = Good
+          DateTime.now().add(const Duration(days: 3)),
         )
         .then((_) {
-          debugPrint('NotificationService: Word "$wordId" marked as known');
+          debugPrint('NotificationService: Word "$wordId" marked as reviewed');
         })
         .catchError((e) {
-          debugPrint('NotificationService: Error marking word as known: $e');
+          debugPrint('NotificationService: Error updating word: $e');
         });
+  }
 
-    // Cancel the sticky notification
-    if (notificationId != null) {
-      NotificationService()._cancelNotification(notificationId);
+  /// Handle direct input from user
+  static void _handleDirectInput(
+    String wordId,
+    String userInput,
+    String correctAnswer,
+  ) {
+    // Normalize both strings for comparison
+    final normalizedInput = userInput.trim().toLowerCase();
+    final normalizedCorrect = correctAnswer.trim().toLowerCase();
+
+    if (normalizedInput == normalizedCorrect) {
+      // Correct!
+      _handleCorrectAnswer(wordId);
+      debugPrint('NotificationService: Direct input CORRECT for "$wordId"');
+    } else {
+      // Wrong - navigate to learn
+      _lastTappedWordId = wordId;
+      _shouldNavigateToFlashcard = true;
+      debugPrint(
+        'NotificationService: Direct input WRONG - expected "$correctAnswer", got "$userInput"',
+      );
+
+      // Show feedback notification
+      NotificationService()._showWrongAnswerNotification(wordId, correctAnswer);
     }
+  }
+
+  /// Show notification with the answer
+  Future<void> _showAnswerNotification(
+    String wordId,
+    String correctAnswer,
+  ) async {
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      autoCancel: true,
+      styleInformation: BigTextStyleInformation(
+        '✅ Đáp án đúng là:\n\n"$correctAnswer"\n\nNhấn để học thêm!',
+      ),
+    );
+
+    final notificationDetails = NotificationDetails(android: androidDetails);
+
+    await _notifications.show(
+      998, // Special ID for answer notification
+      '📖 Đáp án',
+      'Từ: $wordId - $correctAnswer',
+      notificationDetails,
+      payload: wordId,
+    );
+  }
+
+  /// Show wrong answer feedback notification
+  Future<void> _showWrongAnswerNotification(
+    String wordId,
+    String correctAnswer,
+  ) async {
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      autoCancel: true,
+      styleInformation: BigTextStyleInformation(
+        '❌ Sai rồi!\n\nĐáp án đúng là: "$correctAnswer"\n\nNhấn để ôn lại ngay!',
+      ),
+    );
+
+    final notificationDetails = NotificationDetails(android: androidDetails);
+
+    await _notifications.show(
+      997, // Special ID for wrong answer notification
+      '❌ Sai rồi!',
+      'Đáp án: $correctAnswer',
+      notificationDetails,
+      payload: wordId,
+    );
   }
 
   /// Cancel a specific notification by ID
@@ -224,121 +435,102 @@ class NotificationService {
     debugPrint('NotificationService: Cancelled notification $id');
   }
 
+  // ============================================
+  // Scheduling Logic
+  // ============================================
+
   /// Schedule notifications for the next 7 days
-  /// Call this when the app opens to pre-schedule notifications
+  /// 3 notifications per day = 21 total
   Future<void> scheduleNext7Days() async {
-    // Cancel all existing scheduled notifications first
+    // Cancel all existing notifications
     await _notifications.cancelAll();
     debugPrint('NotificationService: Cancelled all existing notifications');
 
-    // Fetch priority words (Forgot and Hard status)
-    List<Word> priorityWords = [];
+    // Fetch all words
+    List<Word> allWords = [];
     try {
-      priorityWords = await _firestoreService.getPriorityWords();
-      debugPrint(
-        'NotificationService: Fetched ${priorityWords.length} priority words',
-      );
+      allWords = await _firestoreService.getAllWords();
+      debugPrint('NotificationService: Fetched ${allWords.length} words');
     } catch (e) {
       debugPrint('NotificationService: Error fetching words: $e');
+      return;
     }
 
-    // If no priority words, fetch all words as fallback
-    if (priorityWords.isEmpty) {
-      try {
-        final allWords = await _firestoreService.getAllWords();
-        if (allWords.isNotEmpty) {
-          priorityWords = allWords..shuffle();
-          if (priorityWords.length > 14) {
-            priorityWords = priorityWords.sublist(0, 14);
-          }
-        }
-        debugPrint(
-          'NotificationService: Using ${priorityWords.length} fallback words',
-        );
-      } catch (e) {
-        debugPrint('NotificationService: Error fetching fallback words: $e');
-        return;
-      }
-    }
-
-    if (priorityWords.isEmpty) {
+    if (allWords.length < 3) {
       debugPrint(
-        'NotificationService: No words available, skipping scheduling',
+        'NotificationService: Not enough words (need at least 3), skipping',
       );
       return;
     }
 
-    // Schedule 7 notifications, one for each day
-    for (int day = 0; day < 7; day++) {
-      final word = priorityWords[day % priorityWords.length];
-      final strategy = _selectStrategy(word, priorityWords);
-      final scheduledDate = _getScheduledDate(day + 1);
+    int totalScheduled = 0;
+    final random = Random();
 
-      await _scheduleNotification(
-        id: day,
-        word: word,
-        strategy: strategy,
-        scheduledDate: scheduledDate,
-        distractorWord: _getDistractorWord(word, priorityWords),
-      );
+    // Outer loop: 7 days
+    for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
+      // Inner loop: 3 time slots
+      for (int slotIndex = 0; slotIndex < _dailySchedules.length; slotIndex++) {
+        final schedule = _dailySchedules[slotIndex];
+        final hour = schedule['hour']!;
+        final minute = schedule['minute']!;
 
-      debugPrint(
-        'NotificationService: Scheduled day ${day + 1} - ${strategy.name} for "${word.word}"',
-      );
+        // Select word using spaced repetition
+        final word = await _selectWordBySpacedRepetition(allWords);
+        if (word == null) continue;
+
+        // Randomly select game mode
+        final gameMode = random.nextBool()
+            ? GameMode.multipleChoice
+            : GameMode.directInput;
+
+        // Get distractors for multiple choice
+        final distractors = _getDistractorWords(word, allWords, 2);
+
+        final scheduledDate = _getScheduledDate(
+          daysFromNow: dayIndex + 1,
+          hour: hour,
+          minute: minute,
+        );
+
+        // Unique ID: (dayIndex * 10) + slotIndex
+        final notificationId = (dayIndex * 10) + slotIndex;
+
+        await _scheduleGameNotification(
+          id: notificationId,
+          word: word,
+          gameMode: gameMode,
+          scheduledDate: scheduledDate,
+          distractors: distractors,
+        );
+
+        debugPrint(
+          'NotificationService: Scheduled ID $notificationId - '
+          'Day ${dayIndex + 1}, ${hour}h - ${gameMode.name} for "${word.word}"',
+        );
+
+        totalScheduled++;
+      }
     }
 
-    debugPrint(
-      'NotificationService: Successfully scheduled 7 days of notifications',
-    );
+    debugPrint('NotificationService: Scheduled $totalScheduled notifications');
   }
 
-  /// Select notification strategy based on word properties and randomization
-  NotificationStrategy _selectStrategy(Word word, List<Word> allWords) {
-    // Force Emotional SOS for forgotten words (status == 0)
-    if (word.status == 0) {
-      return NotificationStrategy.emotional;
-    }
-
-    final rand = Random().nextDouble();
-
-    // 40% chance for Micro-Quiz (need at least 2 words for distractor)
-    if (rand < 0.40 && allWords.length >= 2) {
-      return NotificationStrategy.microQuiz;
-    }
-
-    // 30% chance for Fill-in-the-Blank (only if examples exist)
-    if (rand < 0.70 && word.examplesEn.isNotEmpty) {
-      return NotificationStrategy.fillBlank;
-    }
-
-    // 30% Emotional trigger (fallback)
-    return NotificationStrategy.emotional;
-  }
-
-  /// Get a random distractor word different from the target
-  Word _getDistractorWord(Word targetWord, List<Word> allWords) {
-    if (allWords.length < 2) return targetWord;
-
-    final shuffled = List<Word>.from(allWords)..shuffle();
-    return shuffled.firstWhere(
-      (w) => w.english != targetWord.english,
-      orElse: () => targetWord,
-    );
-  }
-
-  /// Calculate the scheduled date for a notification
-  tz.TZDateTime _getScheduledDate(int daysFromNow) {
+  /// Calculate scheduled date
+  tz.TZDateTime _getScheduledDate({
+    required int daysFromNow,
+    required int hour,
+    required int minute,
+  }) {
     final now = tz.TZDateTime.now(tz.local);
     var scheduled = tz.TZDateTime(
       tz.local,
       now.year,
       now.month,
       now.day + daysFromNow,
-      _notificationHour,
-      _notificationMinute,
+      hour,
+      minute,
     );
 
-    // If the scheduled time has already passed today, schedule for tomorrow
     if (daysFromNow == 0 && scheduled.isBefore(now)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
@@ -346,82 +538,115 @@ class NotificationService {
     return scheduled;
   }
 
-  /// Build common action buttons for sticky notifications
-  List<AndroidNotificationAction> _buildStickyActions() {
-    return <AndroidNotificationAction>[
-      const AndroidNotificationAction(
-        actionMarkKnown,
-        '✅ I know this',
-        showsUserInterface: false, // Dismiss without opening app
-        cancelNotification: false, // We handle cancellation manually
-      ),
-      const AndroidNotificationAction(
-        actionOpenApp,
-        '📖 Learn Now',
-        showsUserInterface: true, // Opens the app
-        cancelNotification: false,
-      ),
-    ];
-  }
+  // ============================================
+  // Game Notification Builders
+  // ============================================
 
-  /// Schedule a single notification with the selected strategy
-  Future<void> _scheduleNotification({
+  /// Schedule a game notification
+  Future<void> _scheduleGameNotification({
     required int id,
     required Word word,
-    required NotificationStrategy strategy,
+    required GameMode gameMode,
     required tz.TZDateTime scheduledDate,
-    required Word distractorWord,
+    required List<Word> distractors,
   }) async {
-    final content = _buildNotificationContent(word, strategy, distractorWord);
+    late NotificationDetails notificationDetails;
+    late String title;
+    late String body;
+    late String payload;
 
-    // Build Android notification details with STICKY configuration
-    AndroidNotificationDetails androidDetails;
+    switch (gameMode) {
+      case GameMode.multipleChoice:
+        final result = _buildMultipleChoiceNotification(word, distractors);
+        title = result['title']!;
+        body = result['body']!;
+        payload = result['payload']!;
+        notificationDetails = result['details'] as NotificationDetails;
+        break;
 
-    // Common sticky notification settings
-    final stickyActions = _buildStickyActions();
-
-    if (strategy == NotificationStrategy.microQuiz) {
-      // Micro-Quiz strategy with quiz buttons + sticky actions
-      final quizActions = <AndroidNotificationAction>[
-        AndroidNotificationAction(
-          actionCorrect,
-          word.word, // Correct answer
-          showsUserInterface: true,
-          cancelNotification: false,
-        ),
-        AndroidNotificationAction(
-          actionDistractor,
-          distractorWord.word, // Distractor answer
-          showsUserInterface: true,
-          cancelNotification: false,
-        ),
-      ];
-
-      androidDetails = AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        channelDescription: _channelDescription,
-        importance: Importance.max,
-        priority: Priority.high,
-        ongoing: true, // STICKY: Cannot be swiped away
-        autoCancel: false, // STICKY: Won't dismiss on tap
-        styleInformation: BigTextStyleInformation(content['body']!),
-        actions: quizActions,
-      );
-    } else {
-      // Other strategies - sticky notification with standard actions
-      androidDetails = AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        channelDescription: _channelDescription,
-        importance: Importance.max,
-        priority: Priority.high,
-        ongoing: true, // STICKY: Cannot be swiped away
-        autoCancel: false, // STICKY: Won't dismiss on tap
-        styleInformation: BigTextStyleInformation(content['body']!),
-        actions: stickyActions,
-      );
+      case GameMode.directInput:
+        final result = _buildDirectInputNotification(word);
+        title = result['title']!;
+        body = result['body']!;
+        payload = result['payload']!;
+        notificationDetails = result['details'] as NotificationDetails;
+        break;
     }
+
+    await _notifications.zonedSchedule(
+      id,
+      title,
+      body,
+      scheduledDate,
+      notificationDetails,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      payload: payload,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  /// Build Multiple Choice notification (Game Mode A)
+  Map<String, dynamic> _buildMultipleChoiceNotification(
+    Word word,
+    List<Word> distractors,
+  ) {
+    final title = '🎯 Nghĩa của "${word.word}" là gì?';
+    final body = 'Phát âm: [${word.ipa}]\nChọn đáp án đúng bên dưới!';
+
+    // Create payload with game data
+    final payload = jsonEncode({
+      'type': 'multipleChoice',
+      'wordId': word.english,
+      'correctAnswer': word.meaningVi,
+    });
+
+    // Build shuffled action buttons
+    final actions = <Map<String, dynamic>>[
+      {'id': actionCorrect, 'label': word.meaningVi},
+    ];
+
+    for (int i = 0; i < distractors.length && i < 2; i++) {
+      actions.add({
+        'id': i == 0 ? actionWrong1 : actionWrong2,
+        'label': distractors[i].meaningVi,
+      });
+    }
+
+    // Shuffle the actions so correct isn't always first
+    actions.shuffle();
+
+    final androidActions = actions.map((a) {
+      final isCorrect = a['id'] == actionCorrect;
+      return AndroidNotificationAction(
+        a['id'] as String,
+        a['label'] as String,
+        showsUserInterface: !isCorrect, // Open app if wrong
+        cancelNotification: false,
+      );
+    }).toList();
+
+    // Add "Open App" button
+    androidActions.add(
+      const AndroidNotificationAction(
+        actionOpenApp,
+        '📖 Mở App',
+        showsUserInterface: true,
+        cancelNotification: false,
+      ),
+    );
+
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.max,
+      priority: Priority.max,
+      ongoing: true,
+      autoCancel: false,
+      styleInformation: BigTextStyleInformation(body),
+      actions: androidActions,
+    );
 
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
@@ -429,98 +654,143 @@ class NotificationService {
       presentSound: true,
     );
 
-    final notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    await _notifications.zonedSchedule(
-      id,
-      content['title'],
-      content['body'],
-      scheduledDate,
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      payload: word.english, // Word ID for navigation
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-    );
+    return {
+      'title': title,
+      'body': body,
+      'payload': payload,
+      'details': NotificationDetails(android: androidDetails, iOS: iosDetails),
+    };
   }
 
-  /// Build notification content based on strategy
-  Map<String, String> _buildNotificationContent(
-    Word word,
-    NotificationStrategy strategy,
-    Word distractorWord,
-  ) {
-    switch (strategy) {
-      case NotificationStrategy.microQuiz:
-        return {
-          'title': '⚡ Quick Quiz: ${word.meaningVi}?',
-          'body': 'Choose the correct English word below!',
-        };
+  /// Build Direct Input notification (Game Mode B)
+  Map<String, dynamic> _buildDirectInputNotification(Word word) {
+    final title = '✍️ Điền nghĩa tiếng Việt:';
+    final body =
+        'Word: ${word.word} [${word.ipa}]\n\nNhập đáp án hoặc nhấn "Hiện đáp án"';
 
-      case NotificationStrategy.fillBlank:
-        final example = word.examplesEn.first;
-        final maskedExample = _maskWordInSentence(example, word.word);
-        return {
-          'title': '🧩 Missing Word Challenge',
-          'body': '$maskedExample (${word.meaningVi})\nTap to reveal!',
-        };
+    // Create payload with game data
+    final payload = jsonEncode({
+      'type': 'directInput',
+      'wordId': word.english,
+      'correctAnswer': word.meaningVi,
+    });
 
-      case NotificationStrategy.emotional:
-        return {
-          'title': '🚨 SOS! Memory Fading...',
-          'body':
-              "You haven't reviewed '${word.word}' recently! It's about to disappear from your brain. 🧠",
-        };
-    }
-  }
+    // Build actions with input field
+    final androidActions = <AndroidNotificationAction>[
+      // Input field action
+      AndroidNotificationAction(
+        actionOpenApp,
+        'Trả lời',
+        showsUserInterface: true,
+        cancelNotification: false,
+        inputs: <AndroidNotificationActionInput>[
+          const AndroidNotificationActionInput(
+            label: 'Nhập đáp án...',
+            allowFreeFormInput: true,
+          ),
+        ],
+      ),
+      // Show answer button
+      const AndroidNotificationAction(
+        actionShowAnswer,
+        '👀 Hiện đáp án',
+        showsUserInterface: false,
+        cancelNotification: false,
+      ),
+      // Open app button
+      const AndroidNotificationAction(
+        actionOpenApp,
+        '📖 Mở App',
+        showsUserInterface: true,
+        cancelNotification: false,
+      ),
+    ];
 
-  /// Replace target word with underscores in the sentence
-  String _maskWordInSentence(String sentence, String targetWord) {
-    // Case-insensitive replacement
-    final regex = RegExp(targetWord, caseSensitive: false);
-    final underscores = '_' * targetWord.length;
-    return sentence.replaceAll(regex, underscores);
-  }
-
-  /// Show an immediate test notification (for debugging)
-  Future<void> showTestNotification() async {
     final androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
       channelDescription: _channelDescription,
       importance: Importance.max,
-      priority: Priority.high,
+      priority: Priority.max,
       ongoing: true,
       autoCancel: false,
-      actions: _buildStickyActions(),
+      styleInformation: BigTextStyleInformation(body),
+      actions: androidActions,
     );
 
-    const iosDetails = DarwinNotificationDetails();
-
-    final notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
     );
 
-    await _notifications.show(
-      999,
-      '🎯 Test Notification',
-      'This is a STICKY notification. Use the buttons to dismiss!',
-      notificationDetails,
-      payload: 'test_word',
+    return {
+      'title': title,
+      'body': body,
+      'payload': payload,
+      'details': NotificationDetails(android: androidDetails, iOS: iosDetails),
+    };
+  }
+
+  // ============================================
+  // Utility Methods
+  // ============================================
+
+  /// Show an immediate test notification
+  Future<void> showTestNotification() async {
+    List<Word> words = [];
+    try {
+      words = await _firestoreService.getAllWords();
+    } catch (e) {
+      debugPrint('NotificationService: Error fetching words: $e');
+      return;
+    }
+
+    if (words.length < 3) {
+      debugPrint('NotificationService: Not enough words for test');
+      return;
+    }
+
+    final random = Random();
+    final testWord = words[random.nextInt(words.length)];
+    final distractors = _getDistractorWords(testWord, words, 2);
+    final gameMode = random.nextBool()
+        ? GameMode.multipleChoice
+        : GameMode.directInput;
+
+    late NotificationDetails details;
+    late String title;
+    late String body;
+    late String payload;
+
+    if (gameMode == GameMode.multipleChoice) {
+      final result = _buildMultipleChoiceNotification(testWord, distractors);
+      title = result['title']!;
+      body = result['body']!;
+      payload = result['payload']!;
+      details = result['details'] as NotificationDetails;
+    } else {
+      final result = _buildDirectInputNotification(testWord);
+      title = result['title']!;
+      body = result['body']!;
+      payload = result['payload']!;
+      details = result['details'] as NotificationDetails;
+    }
+
+    await _notifications.show(999, title, body, details, payload: payload);
+
+    debugPrint(
+      'NotificationService: Test - ${gameMode.name} for "${testWord.word}"',
     );
   }
 
-  /// Cancel all scheduled notifications
+  /// Cancel all notifications
   Future<void> cancelAll() async {
     await _notifications.cancelAll();
     debugPrint('NotificationService: All notifications cancelled');
   }
 
-  /// Get pending notification requests (for debugging)
+  /// Get pending notifications
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
     return await _notifications.pendingNotificationRequests();
   }
