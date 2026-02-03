@@ -72,6 +72,8 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  bool _notificationsInitialized = false;
+  
   @override
   void initState() {
     super.initState();
@@ -79,12 +81,27 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Future<void> _initializeNotificationsIfLoggedIn() async {
+    if (_notificationsInitialized) return; // Prevent multiple initializations
+    
     if (AuthService.instance.isSignedIn) {
+      _notificationsInitialized = true;
+      
       // Initialize notifications only when user is logged in
       final notificationService = NotificationService();
       await notificationService.initialize();
-      await notificationService.requestPermissions();
-      notificationService.scheduleNext7Days();
+      
+      final granted = await notificationService.requestPermissions();
+      debugPrint('NotificationService: Permissions granted = $granted');
+      
+      if (granted) {
+        await notificationService.scheduleNext7Days();
+        
+        // Check how many notifications are scheduled
+        final pending = await notificationService.getPendingNotifications();
+        debugPrint('NotificationService: ${pending.length} notifications scheduled');
+      } else {
+        debugPrint('NotificationService: Permissions not granted, skipping scheduling');
+      }
     }
   }
 
@@ -102,12 +119,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         // User is logged in
         if (snapshot.hasData && snapshot.data != null) {
-          // Re-initialize notifications when user logs in
-          _initializeNotificationsIfLoggedIn();
+          // Re-initialize notifications when user logs in (only once)
+          if (!_notificationsInitialized) {
+            _initializeNotificationsIfLoggedIn();
+          }
           return const HomeScreen();
         }
 
-        // User is not logged in
+        // User is not logged in - reset notification flag
+        _notificationsInitialized = false;
         return const LoginScreen();
       },
     );

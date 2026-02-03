@@ -42,11 +42,13 @@ class NotificationService {
   static const String inputReplyKey = 'INPUT_REPLY';
 
   // ============================================
-  // Scheduling Configuration: 3 times per day
+  // Scheduling Configuration: 5 times per day for better learning
   // ============================================
   static const List<Map<String, int>> _dailySchedules = [
     {'hour': 8, 'minute': 0}, // Morning
-    {'hour': 12, 'minute': 0}, // Noon
+    {'hour': 10, 'minute': 30}, // Mid-morning
+    {'hour': 12, 'minute': 30}, // Noon
+    {'hour': 16, 'minute': 0}, // Afternoon
     {'hour': 20, 'minute': 0}, // Evening
   ];
 
@@ -115,8 +117,18 @@ class NotificationService {
     bool granted = false;
 
     if (android != null) {
+      // Request notification permission
       granted = await android.requestNotificationsPermission() ?? false;
+      debugPrint('NotificationService: Notification permission = $granted');
+
+      // Request exact alarm permission for Android 12+
+      final exactAlarmGranted =
+          await android.requestExactAlarmsPermission() ?? false;
+      debugPrint(
+        'NotificationService: Exact alarm permission = $exactAlarmGranted',
+      );
     }
+
     if (ios != null) {
       granted =
           await ios.requestPermissions(alert: true, badge: true, sound: true) ??
@@ -125,6 +137,27 @@ class NotificationService {
 
     debugPrint('NotificationService: Permission granted = $granted');
     return granted;
+  }
+
+  /// Check if all required permissions are granted
+  Future<Map<String, bool>> checkPermissions() async {
+    final android = _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+
+    final result = <String, bool>{'notifications': false, 'exactAlarms': false};
+
+    if (android != null) {
+      result['notifications'] =
+          await android.areNotificationsEnabled() ?? false;
+      // Note: There's no direct API to check exact alarm permission status
+      // But we can assume it's granted if notifications are enabled
+      result['exactAlarms'] = result['notifications']!;
+    }
+
+    debugPrint('NotificationService: Permissions check = $result');
+    return result;
   }
 
   /// Create Android notification channel
@@ -150,43 +183,66 @@ class NotificationService {
   // ============================================
 
   /// Select a word using spaced repetition algorithm
-  /// Priority 1 (80%): status == 0 (Forgot) or status == 1 (Hard)
-  /// Priority 2 (20%): status >= 2 (Mastered) for review
+  /// Priority 1 (70%): status == 0 (Forgot) - Chua thuoc, can on luyen nhieu
+  /// Priority 2 (20%): status == 1 (Hard) - Kho, can on luyen
+  /// Priority 3 (8%): status == 2 (Good) - Da thuoc, on tap dinh ky
+  /// Priority 4 (2%): status >= 3 (Easy) - Thao roi, on tap it
   Future<Word?> _selectWordBySpacedRepetition(List<Word> allWords) async {
     if (allWords.isEmpty) return null;
 
     final random = Random();
     final roll = random.nextDouble();
 
-    // Priority words: Forgot (0) or Hard (1)
-    final priorityWords = allWords
-        .where((w) => w.status == 0 || w.status == 1)
-        .toList();
+    // Status 0: Chua thuoc (Forgot) - can on nhieu nhat
+    final forgotWords = allWords.where((w) => w.status == 0).toList();
 
-    // Review words: Good (2) or Easy (3)
-    final reviewWords = allWords.where((w) => w.status >= 2).toList();
+    // Status 1: Kho (Hard) - can on thuong xuyen
+    final hardWords = allWords.where((w) => w.status == 1).toList();
+
+    // Status 2: Da thuoc (Good) - on tap dinh ky
+    final goodWords = allWords.where((w) => w.status == 2).toList();
+
+    // Status 3+: Thao roi (Easy) - on tap it
+    final easyWords = allWords.where((w) => w.status >= 3).toList();
 
     List<Word> pool;
+    String poolName;
 
-    if (roll < 0.80 && priorityWords.isNotEmpty) {
-      // 80% chance: Pick from priority words
-      pool = priorityWords;
-      debugPrint(
-        'NotificationService: Selected from priority pool (${pool.length} words)',
-      );
-    } else if (reviewWords.isNotEmpty) {
-      // 20% chance: Pick from review words
-      pool = reviewWords;
-      debugPrint(
-        'NotificationService: Selected from review pool (${pool.length} words)',
-      );
+    if (roll < 0.70 && forgotWords.isNotEmpty) {
+      // 70% chance: Pick from forgot words (status 0)
+      pool = forgotWords;
+      poolName = 'FORGOT (status=0)';
+    } else if (roll < 0.90 && hardWords.isNotEmpty) {
+      // 20% chance: Pick from hard words (status 1)
+      pool = hardWords;
+      poolName = 'HARD (status=1)';
+    } else if (roll < 0.98 && goodWords.isNotEmpty) {
+      // 8% chance: Pick from good words (status 2)
+      pool = goodWords;
+      poolName = 'GOOD (status=2)';
+    } else if (easyWords.isNotEmpty) {
+      // 2% chance: Pick from easy words (status 3+)
+      pool = easyWords;
+      poolName = 'EASY (status>=3)';
+    } else if (forgotWords.isNotEmpty) {
+      // Fallback to forgot words
+      pool = forgotWords;
+      poolName = 'FALLBACK-FORGOT';
+    } else if (hardWords.isNotEmpty) {
+      pool = hardWords;
+      poolName = 'FALLBACK-HARD';
+    } else if (goodWords.isNotEmpty) {
+      pool = goodWords;
+      poolName = 'FALLBACK-GOOD';
     } else {
-      // Fallback: Use all words
+      // Ultimate fallback: Use all words
       pool = allWords;
-      debugPrint(
-        'NotificationService: Fallback to all words (${pool.length} words)',
-      );
+      poolName = 'ALL-WORDS';
     }
+
+    debugPrint(
+      'NotificationService: Selected from $poolName pool (${pool.length} words)',
+    );
 
     pool.shuffle();
     return pool.first;
@@ -259,10 +315,16 @@ class NotificationService {
 
       case actionWrong1:
       case actionWrong2:
-        // User clicked wrong answer - navigate to learn
+        // User clicked wrong answer - show feedback notification
         _lastTappedWordId = wordId;
         _shouldNavigateToFlashcard = true;
-        debugPrint('NotificationService: Wrong answer, navigate to flashcard');
+        debugPrint('NotificationService: Wrong answer for "$wordId"');
+
+        // Show wrong answer notification with correct answer
+        NotificationService()._showWrongAnswerNotification(
+          wordId,
+          correctAnswer,
+        );
         break;
 
       case actionShowAnswer:
@@ -298,6 +360,7 @@ class NotificationService {
     final notificationId = response.id;
     final payload = response.payload;
     final actionId = response.actionId;
+    final userInput = response.input;
 
     // Cancel the persistent notification
     if (notificationId != null) {
@@ -315,12 +378,21 @@ class NotificationService {
     }
 
     final wordId = payloadData['wordId'] as String? ?? payload;
+    final correctAnswer = payloadData['correctAnswer'] as String? ?? '';
 
     if (actionId == actionCorrect) {
       _handleCorrectAnswer(wordId);
     } else if (actionId == actionWrong1 || actionId == actionWrong2) {
+      // Wrong answer in multiple choice - show feedback
       _lastTappedWordId = wordId;
       _shouldNavigateToFlashcard = true;
+      NotificationService()._showWrongAnswerNotification(wordId, correctAnswer);
+    } else if (actionId == actionShowAnswer) {
+      // Show answer
+      NotificationService()._showAnswerNotification(wordId, correctAnswer);
+    } else if (userInput != null && userInput.isNotEmpty) {
+      // Direct input mode
+      _handleDirectInput(wordId, userInput, correctAnswer);
     } else {
       _lastTappedWordId = wordId;
       _shouldNavigateToFlashcard = true;
@@ -352,14 +424,19 @@ class NotificationService {
     String userInput,
     String correctAnswer,
   ) {
-    // Normalize both strings for comparison
-    final normalizedInput = userInput.trim().toLowerCase();
-    final normalizedCorrect = correctAnswer.trim().toLowerCase();
+    // Check if answer is correct using flexible matching
+    final isCorrect = _isAnswerCorrect(userInput, correctAnswer);
 
-    if (normalizedInput == normalizedCorrect) {
+    if (isCorrect) {
       // Correct!
       _handleCorrectAnswer(wordId);
       debugPrint('NotificationService: Direct input CORRECT for "$wordId"');
+
+      // Show success notification
+      NotificationService()._showCorrectAnswerNotification(
+        wordId,
+        correctAnswer,
+      );
     } else {
       // Wrong - navigate to learn
       _lastTappedWordId = wordId;
@@ -373,7 +450,88 @@ class NotificationService {
     }
   }
 
-  /// Show notification with the answer
+  /// Flexible answer matching
+  /// Returns true if userInput matches any acceptable form of correctAnswer
+  static bool _isAnswerCorrect(String userInput, String correctAnswer) {
+    // Normalize input
+    final input = _normalizeText(userInput);
+    final correct = _normalizeText(correctAnswer);
+
+    // 1. Exact match after normalization
+    if (input == correct) return true;
+
+    // 2. Split correct answer by common separators and check each part
+    // Separators: comma, semicolon, slash, "hoặc", "hay", parentheses content
+    final separators = RegExp(r'[,;/]|\s+hoặc\s+|\s+hay\s+');
+    final correctParts = correct
+        .split(separators)
+        .map((s) => _normalizeText(s))
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    // Check if input matches any part exactly
+    for (final part in correctParts) {
+      if (input == part) return true;
+    }
+
+    // 3. Check if input is contained in correct answer (for partial match)
+    // e.g., correct = "học sinh, sinh viên", input = "học sinh" -> match
+    if (correct.contains(input) && input.length >= 2) return true;
+
+    // 4. Check if any part of correct answer is contained in input
+    for (final part in correctParts) {
+      if (part.isNotEmpty && input.contains(part) && part.length >= 2)
+        return true;
+    }
+
+    // 5. Remove content in parentheses from correct answer and check
+    // e.g., correct = "học sinh (n)", input = "học sinh" -> match
+    final correctWithoutParens = _normalizeText(
+      correct.replaceAll(RegExp(r'\([^)]*\)'), ''),
+    );
+    if (input == correctWithoutParens) return true;
+
+    // 6. Check similarity for typo tolerance (Levenshtein-like)
+    // If the input is very similar (>80% match), consider it correct
+    for (final part in correctParts) {
+      if (_calculateSimilarity(input, part) > 0.8) return true;
+    }
+
+    return false;
+  }
+
+  /// Normalize text for comparison
+  static String _normalizeText(String text) {
+    var result = text.trim().toLowerCase();
+    // Replace multiple spaces with single space
+    result = result.replaceAll(RegExp(r'\s+'), ' ');
+    // Remove trailing punctuation
+    result = result.replaceAll(RegExp(r'[.,!?;:]+$'), '');
+    return result;
+  }
+
+  /// Calculate similarity between two strings (0.0 to 1.0)
+  static double _calculateSimilarity(String s1, String s2) {
+    if (s1 == s2) return 1.0;
+    if (s1.isEmpty || s2.isEmpty) return 0.0;
+
+    final longer = s1.length > s2.length ? s1 : s2;
+    final shorter = s1.length > s2.length ? s2 : s1;
+
+    if (longer.isEmpty) return 1.0;
+
+    // Simple similarity based on common characters
+    int matches = 0;
+    for (int i = 0; i < shorter.length; i++) {
+      if (i < longer.length && shorter[i] == longer[i]) {
+        matches++;
+      }
+    }
+
+    return matches / longer.length;
+  }
+
+  /// Show notification with the answer (when user clicks "Show Answer")
   Future<void> _showAnswerNotification(
     String wordId,
     String correctAnswer,
@@ -396,6 +554,41 @@ class NotificationService {
       998, // Special ID for answer notification
       '📖 Đáp án',
       'Từ: $wordId - $correctAnswer',
+      notificationDetails,
+      payload: wordId,
+    );
+  }
+
+  /// Show correct answer feedback notification (when user answers correctly)
+  Future<void> _showCorrectAnswerNotification(
+    String wordId,
+    String correctAnswer,
+  ) async {
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      autoCancel: true,
+      timeoutAfter: 5000, // Auto dismiss after 5 seconds
+      styleInformation: BigTextStyleInformation(
+        '🎉 Chính xác!\n\n"$correctAnswer"\n\nGiỏi lắm, tiếp tục phát huy!',
+      ),
+    );
+
+    final notificationDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentSound: true,
+      ),
+    );
+
+    await _notifications.show(
+      996, // Special ID for correct answer notification
+      '✅ Đúng rồi!',
+      correctAnswer,
       notificationDetails,
       payload: wordId,
     );
@@ -439,8 +632,8 @@ class NotificationService {
   // Scheduling Logic
   // ============================================
 
-  /// Schedule notifications for the next 7 days
-  /// 3 notifications per day = 21 total
+  /// Schedule notifications for TODAY and the next 7 days
+  /// 5 notifications per day = up to 40 total
   Future<void> scheduleNext7Days() async {
     // Cancel all existing notifications
     await _notifications.cancelAll();
@@ -465,10 +658,59 @@ class NotificationService {
 
     int totalScheduled = 0;
     final random = Random();
+    final now = tz.TZDateTime.now(tz.local);
 
-    // Outer loop: 7 days
-    for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
-      // Inner loop: 3 time slots
+    // ========================================
+    // STEP 1: Schedule for TODAY (remaining time slots)
+    // ========================================
+    for (int slotIndex = 0; slotIndex < _dailySchedules.length; slotIndex++) {
+      final schedule = _dailySchedules[slotIndex];
+      final hour = schedule['hour']!;
+      final minute = schedule['minute']!;
+
+      // Check if this time slot is still in the future
+      final todaySlot = tz.TZDateTime(
+        tz.local,
+        now.year,
+        now.month,
+        now.day,
+        hour,
+        minute,
+      );
+
+      if (todaySlot.isAfter(now)) {
+        // This slot is still in the future today - schedule it!
+        final word = await _selectWordBySpacedRepetition(allWords);
+        if (word == null) continue;
+
+        final gameMode = random.nextBool()
+            ? GameMode.multipleChoice
+            : GameMode.directInput;
+        final distractors = _getDistractorWords(word, allWords, 2);
+
+        // Unique ID for today: 1000 + slotIndex
+        final notificationId = 1000 + slotIndex;
+
+        await _scheduleGameNotification(
+          id: notificationId,
+          word: word,
+          gameMode: gameMode,
+          scheduledDate: todaySlot,
+          distractors: distractors,
+        );
+
+        debugPrint(
+          'NotificationService: Scheduled TODAY ID $notificationId - '
+          '${hour}:${minute.toString().padLeft(2, '0')} - ${gameMode.name} for "${word.word}"',
+        );
+        totalScheduled++;
+      }
+    }
+
+    // ========================================
+    // STEP 2: Schedule for the next 7 days
+    // ========================================
+    for (int dayIndex = 1; dayIndex <= 7; dayIndex++) {
       for (int slotIndex = 0; slotIndex < _dailySchedules.length; slotIndex++) {
         final schedule = _dailySchedules[slotIndex];
         final hour = schedule['hour']!;
@@ -486,10 +728,13 @@ class NotificationService {
         // Get distractors for multiple choice
         final distractors = _getDistractorWords(word, allWords, 2);
 
-        final scheduledDate = _getScheduledDate(
-          daysFromNow: dayIndex + 1,
-          hour: hour,
-          minute: minute,
+        final scheduledDate = tz.TZDateTime(
+          tz.local,
+          now.year,
+          now.month,
+          now.day + dayIndex,
+          hour,
+          minute,
         );
 
         // Unique ID: (dayIndex * 10) + slotIndex
@@ -505,37 +750,25 @@ class NotificationService {
 
         debugPrint(
           'NotificationService: Scheduled ID $notificationId - '
-          'Day ${dayIndex + 1}, ${hour}h - ${gameMode.name} for "${word.word}"',
+          'Day +$dayIndex, ${hour}:${minute.toString().padLeft(2, '0')} - ${gameMode.name} for "${word.word}"',
         );
 
         totalScheduled++;
       }
     }
 
-    debugPrint('NotificationService: Scheduled $totalScheduled notifications');
-  }
-
-  /// Calculate scheduled date
-  tz.TZDateTime _getScheduledDate({
-    required int daysFromNow,
-    required int hour,
-    required int minute,
-  }) {
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled = tz.TZDateTime(
-      tz.local,
-      now.year,
-      now.month,
-      now.day + daysFromNow,
-      hour,
-      minute,
+    debugPrint(
+      'NotificationService: Total scheduled: $totalScheduled notifications',
     );
 
-    if (daysFromNow == 0 && scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+    // Log pending notifications for debugging
+    final pending = await getPendingNotifications();
+    debugPrint(
+      'NotificationService: Pending notifications count: ${pending.length}',
+    );
+    for (final p in pending.take(5)) {
+      debugPrint('  - ID ${p.id}: ${p.title}');
     }
-
-    return scheduled;
   }
 
   // ============================================
@@ -748,6 +981,11 @@ class NotificationService {
 
     if (words.length < 3) {
       debugPrint('NotificationService: Not enough words for test');
+      // Show a simple notification to verify notifications work
+      await _showSimpleNotification(
+        'Test Notification',
+        'Notifications are working! But you need at least 3 words.',
+      );
       return;
     }
 
@@ -782,6 +1020,94 @@ class NotificationService {
     debugPrint(
       'NotificationService: Test - ${gameMode.name} for "${testWord.word}"',
     );
+  }
+
+  /// Show a simple notification (for testing purposes)
+  Future<void> _showSimpleNotification(String title, String body) async {
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.max,
+      priority: Priority.max,
+      autoCancel: true,
+    );
+
+    final notificationDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
+    );
+
+    await _notifications.show(888, title, body, notificationDetails);
+    debugPrint('NotificationService: Simple notification shown');
+  }
+
+  /// Schedule a test notification in [seconds] seconds
+  /// This helps verify that scheduled notifications work
+  Future<void> scheduleTestNotificationIn(int seconds) async {
+    List<Word> words = [];
+    try {
+      words = await _firestoreService.getAllWords();
+    } catch (e) {
+      debugPrint('NotificationService: Error fetching words: $e');
+      return;
+    }
+
+    if (words.length < 3) {
+      debugPrint('NotificationService: Not enough words for scheduled test');
+      return;
+    }
+
+    final random = Random();
+    final testWord = words[random.nextInt(words.length)];
+    final distractors = _getDistractorWords(testWord, words, 2);
+    final gameMode = random.nextBool()
+        ? GameMode.multipleChoice
+        : GameMode.directInput;
+
+    final scheduledDate = tz.TZDateTime.now(
+      tz.local,
+    ).add(Duration(seconds: seconds));
+
+    await _scheduleGameNotification(
+      id: 777,
+      word: testWord,
+      gameMode: gameMode,
+      scheduledDate: scheduledDate,
+      distractors: distractors,
+    );
+
+    debugPrint(
+      'NotificationService: Scheduled test in $seconds seconds for "${testWord.word}"',
+    );
+  }
+
+  /// Get debug info about notification status
+  Future<Map<String, dynamic>> getDebugInfo() async {
+    final pending = await getPendingNotifications();
+    final permissions = await checkPermissions();
+
+    return {
+      'permissionsGranted': permissions,
+      'pendingCount': pending.length,
+      'pendingNotifications': pending
+          .take(10)
+          .map(
+            (p) => {
+              'id': p.id,
+              'title': p.title,
+              'body': p.body?.substring(
+                0,
+                (p.body?.length ?? 0) > 50 ? 50 : p.body?.length ?? 0,
+              ),
+            },
+          )
+          .toList(),
+    };
   }
 
   /// Cancel all notifications

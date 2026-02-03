@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/tts_service.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -80,6 +81,143 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Test TTS with current settings
   void _testAudio() {
     TtsService.instance.speak('This is an example of the English voice.');
+  }
+
+  /// Test notification immediately
+  Future<void> _testNotificationNow() async {
+    final notificationService = NotificationService();
+    await notificationService.showTestNotification();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã gửi thông báo test! Kiểm tra thanh thông báo.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  /// Test scheduled notification in 10 seconds
+  Future<void> _testNotificationIn10Seconds() async {
+    final notificationService = NotificationService();
+    await notificationService.scheduleTestNotificationIn(10);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Thông báo sẽ xuất hiện sau 10 giây!'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    }
+  }
+
+  /// Reschedule all notifications
+  Future<void> _rescheduleNotifications() async {
+    final notificationService = NotificationService();
+    
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      await notificationService.initialize();
+      final granted = await notificationService.requestPermissions();
+      
+      if (!granted) {
+        if (mounted) {
+          Navigator.pop(context); // Close loading
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Vui lòng cấp quyền thông báo trong cài đặt!'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      
+      await notificationService.scheduleNext7Days();
+      final pending = await notificationService.getPendingNotifications();
+      
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã lên lịch ${pending.length} thông báo cho 7 ngày tới!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Show notification debug info
+  Future<void> _showNotificationDebugInfo() async {
+    final notificationService = NotificationService();
+    final debugInfo = await notificationService.getDebugInfo();
+    
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Debug Info'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Quyền thông báo:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text('${debugInfo['permissionsGranted']}'),
+                const SizedBox(height: 12),
+                Text(
+                  'Số thông báo đang chờ: ${debugInfo['pendingCount']}',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                if ((debugInfo['pendingNotifications'] as List).isNotEmpty) ...[
+                  const Text('Các thông báo sắp tới:'),
+                  ...(debugInfo['pendingNotifications'] as List).map((n) => 
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8, top: 4),
+                      child: Text(
+                        '• ID ${n['id']}: ${n['title']}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ] else
+                  const Text(
+                    'Không có thông báo nào được lên lịch!',
+                    style: TextStyle(color: Colors.red),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Đóng'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   /// Handle logout
@@ -276,7 +414,110 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Divider(height: 32),
 
                   // ==========================================
-                  // Section C: Account
+                  // Section C: Notifications
+                  // ==========================================
+                  _buildSectionHeader('Thông báo ôn tập', Icons.notifications_active),
+                  const SizedBox(height: 12),
+                  
+                  // Notification info card
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Lịch thông báo hàng ngày',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '• 8:00 - Buổi sáng\n'
+                          '• 10:30 - Giữa sáng\n'
+                          '• 12:30 - Buổi trưa\n'
+                          '• 16:00 - Buổi chiều\n'
+                          '• 20:00 - Buổi tối',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Test notification button
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _testNotificationNow,
+                          icon: const Icon(Icons.notification_add),
+                          label: const Text('Test ngay'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _testNotificationIn10Seconds,
+                          icon: const Icon(Icons.schedule),
+                          label: const Text('Test sau 10s'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Reschedule notifications button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _rescheduleNotifications,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Đặt lại lịch thông báo'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Debug info button
+                  TextButton.icon(
+                    onPressed: _showNotificationDebugInfo,
+                    icon: const Icon(Icons.bug_report, size: 18),
+                    label: const Text('Xem thông tin debug'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey.shade600,
+                    ),
+                  ),
+
+                  const Divider(height: 32),
+
+                  // ==========================================
+                  // Section D: Account
                   // ==========================================
                   _buildSectionHeader('Tài khoản', Icons.person),
                   const SizedBox(height: 12),
