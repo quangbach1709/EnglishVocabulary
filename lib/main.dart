@@ -13,7 +13,6 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/notification_service.dart';
 import 'services/tts_service.dart';
-import 'services/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,31 +76,35 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   void initState() {
     super.initState();
-    _initializeNotificationsIfLoggedIn();
   }
 
-  Future<void> _initializeNotificationsIfLoggedIn() async {
-    if (_notificationsInitialized) return; // Prevent multiple initializations
+  Future<void> _initializeNotifications() async {
+    if (_notificationsInitialized) return;
+    _notificationsInitialized = true;
     
-    if (AuthService.instance.isSignedIn) {
-      _notificationsInitialized = true;
-      
-      // Initialize notifications only when user is logged in
+    try {
       final notificationService = NotificationService();
-      await notificationService.initialize();
       
+      // Initialize first
+      await notificationService.initialize();
+      debugPrint('NotificationService: Initialized');
+      
+      // Small delay to ensure plugin is ready (important for release builds)
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Request permissions
       final granted = await notificationService.requestPermissions();
       debugPrint('NotificationService: Permissions granted = $granted');
       
       if (granted) {
         await notificationService.scheduleNext7Days();
-        
-        // Check how many notifications are scheduled
         final pending = await notificationService.getPendingNotifications();
         debugPrint('NotificationService: ${pending.length} notifications scheduled');
       } else {
-        debugPrint('NotificationService: Permissions not granted, skipping scheduling');
+        debugPrint('NotificationService: Permissions not granted');
       }
+    } catch (e) {
+      debugPrint('NotificationService: Error initializing - $e');
     }
   }
 
@@ -119,9 +122,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         // User is logged in
         if (snapshot.hasData && snapshot.data != null) {
-          // Re-initialize notifications when user logs in (only once)
+          // Initialize notifications after frame is rendered
           if (!_notificationsInitialized) {
-            _initializeNotificationsIfLoggedIn();
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _initializeNotifications();
+            });
           }
           return const HomeScreen();
         }
