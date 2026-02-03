@@ -21,7 +21,23 @@ A powerful, cloud-synced Flutter application designed to help you master English
 *   **Privacy-First**: Your API key is stored locally on your device.
 
 ### ⚡ Smart Learning & Management
-*   **Priority Notifications**: Get daily reminders for words you find difficult (SRS-based).
+### 📚 Rich Vocabulary Structure [NEW]
+*   **Deep Linguistic Data**: Words now store comprehensive details beyond just meaning:
+    *   **Multiple Meanings**: Definitions are categorized by Part of Speech (Noun, Verb, Adj) with specific translations.
+    *   **Verb Forms**: Learn conjugations (Past Tense, Participles) alongside the base form.
+    *   **Pronunciation**: Includes both US 🇺🇸 and UK 🇬🇧 IPA transcriptions and audio support.
+    *   **Contextual Examples**: Sentences are tied to specific definitions, helping you understand nuance.
+
+### 🎮 Interactive Notification Games [NEW]
+*   **Active Recall**: Turn passive notifications into active learning moments 3 times a day (Morning, Noon, Evening).
+*   **Game Modes**:
+    *   **Multiple Choice 🎯**: Choose the correct meaning from 3 options directly in the notification.
+    *   **Direct Input ✍️**: Type the meaning of a word in the notification reply box. Includes a "Show Answer" hint button.
+*   **Spaced Repetition**: The system intelligently picks words you struggle with (80% chance) vs. words you've mastered (20% review).
+*   **Persistent Learning**: Notifications stick until you interact, ensuring you never miss a daily goal.
+
+### ⚡ Smart Learning & Management
+*   **Proof of Knowledge**: Answering correctly in notifications automatically updates the word's review status to "Good".
 *   **Grouping**: Organize words into custom groups (e.g., "IELTS", "Verbs").
 *   **Swipe Actions**:
     *   **Swipe Right**: Remove from group.
