@@ -771,6 +771,140 @@ class NotificationService {
     }
   }
 
+  /// Schedule notifications with custom times from user settings
+  Future<void> scheduleWithCustomTimes(
+    List<Map<String, int>> customSchedules,
+  ) async {
+    // Cancel all existing notifications
+    await _notifications.cancelAll();
+    debugPrint('NotificationService: Cancelled all existing notifications');
+
+    if (customSchedules.isEmpty) {
+      debugPrint('NotificationService: No custom schedules provided');
+      return;
+    }
+
+    // Fetch all words
+    List<Word> allWords = [];
+    try {
+      allWords = await _firestoreService.getAllWords();
+      debugPrint('NotificationService: Fetched ${allWords.length} words');
+    } catch (e) {
+      debugPrint('NotificationService: Error fetching words: $e');
+      return;
+    }
+
+    if (allWords.length < 3) {
+      debugPrint(
+        'NotificationService: Not enough words (need at least 3), skipping',
+      );
+      return;
+    }
+
+    int totalScheduled = 0;
+    final random = Random();
+    final now = tz.TZDateTime.now(tz.local);
+
+    // ========================================
+    // STEP 1: Schedule for TODAY (remaining time slots)
+    // ========================================
+    for (int slotIndex = 0; slotIndex < customSchedules.length; slotIndex++) {
+      final schedule = customSchedules[slotIndex];
+      final hour = schedule['hour'] ?? 8;
+      final minute = schedule['minute'] ?? 0;
+
+      // Check if this time slot is still in the future
+      final todaySlot = tz.TZDateTime(
+        tz.local,
+        now.year,
+        now.month,
+        now.day,
+        hour,
+        minute,
+      );
+
+      if (todaySlot.isAfter(now)) {
+        final word = await _selectWordBySpacedRepetition(allWords);
+        if (word == null) continue;
+
+        final gameMode = random.nextBool()
+            ? GameMode.multipleChoice
+            : GameMode.directInput;
+        final distractors = _getDistractorWords(word, allWords, 2);
+
+        final notificationId = 1000 + slotIndex;
+
+        await _scheduleGameNotification(
+          id: notificationId,
+          word: word,
+          gameMode: gameMode,
+          scheduledDate: todaySlot,
+          distractors: distractors,
+        );
+
+        debugPrint(
+          'NotificationService: Scheduled TODAY ID $notificationId - '
+          '${hour}:${minute.toString().padLeft(2, '0')} - ${gameMode.name} for "${word.word}"',
+        );
+        totalScheduled++;
+      }
+    }
+
+    // ========================================
+    // STEP 2: Schedule for the next 7 days
+    // ========================================
+    for (int dayIndex = 1; dayIndex <= 7; dayIndex++) {
+      for (int slotIndex = 0; slotIndex < customSchedules.length; slotIndex++) {
+        final schedule = customSchedules[slotIndex];
+        final hour = schedule['hour'] ?? 8;
+        final minute = schedule['minute'] ?? 0;
+
+        final word = await _selectWordBySpacedRepetition(allWords);
+        if (word == null) continue;
+
+        final gameMode = random.nextBool()
+            ? GameMode.multipleChoice
+            : GameMode.directInput;
+        final distractors = _getDistractorWords(word, allWords, 2);
+
+        final scheduledDate = tz.TZDateTime(
+          tz.local,
+          now.year,
+          now.month,
+          now.day + dayIndex,
+          hour,
+          minute,
+        );
+
+        final notificationId = (dayIndex * 100) + slotIndex;
+
+        await _scheduleGameNotification(
+          id: notificationId,
+          word: word,
+          gameMode: gameMode,
+          scheduledDate: scheduledDate,
+          distractors: distractors,
+        );
+
+        debugPrint(
+          'NotificationService: Scheduled ID $notificationId - '
+          'Day +$dayIndex, ${hour}:${minute.toString().padLeft(2, '0')} - ${gameMode.name} for "${word.word}"',
+        );
+
+        totalScheduled++;
+      }
+    }
+
+    debugPrint(
+      'NotificationService: Total scheduled with custom times: $totalScheduled notifications',
+    );
+
+    final pending = await getPendingNotifications();
+    debugPrint(
+      'NotificationService: Pending notifications count: ${pending.length}',
+    );
+  }
+
   // ============================================
   // Game Notification Builders
   // ============================================

@@ -107,21 +107,44 @@ JSON Schema:
   GeminiService();
 
   Future<List<Word>> fetchWords(String input) async {
-    final prompt =
-        '''
-      Explain the following words: "$input".
-      If the input is a list (comma separated), explain ALL of them.
-      Return a JSON LIST of objects. Each object must follow this format:
+    final prompt = '''
+Act as a Dictionary API.
+Task: Generate vocabulary data for: "$input"
+If multiple words (comma separated), return ALL.
+
+Return JSON LIST:
+[
+  {
+    "word": "example",
+    "pos": ["noun", "verb"],
+    "verbs": [
+      {"id": 0, "type": "Past tense", "text": "..."},
+      {"id": 1, "type": "Past participle", "text": "..."},
+      {"id": 2, "type": "Present participle", "text": "..."}
+    ],
+    "pronunciation": [
+      {"pos": "noun", "lang": "us", "url": "", "pron": "/ɪɡˈzæm.pəl/"},
+      {"pos": "noun", "lang": "uk", "url": "", "pron": "/ɪɡˈzɑːm.pəl/"}
+    ],
+    "definition": [
       {
-        "word": "The Word",
-        "ipa": "IPA transcription",
-        "meaning_vi": "Vietnamese meaning",
-        "examples_en": ["Example sentence 1 in English", "Example sentence 2 in English"],
-        "examples_vi": ["Vietnamese translation 1", "Vietnamese translation 2"]
+        "id": 0,
+        "pos": "noun",
+        "text": "English definition",
+        "translation": "Nghĩa tiếng Việt tự nhiên",
+        "example": [{"id": 0, "text": "Eng sentence.", "translation": "Câu tiếng Việt."}]
       }
-      Ensure "examples_en" and "examples_vi" are ARRAYS of strings.
-      Ensure the response is a valid JSON LIST, even if there is only one word.
-    ''';
+    ]
+  }
+]
+
+Rules:
+- 1 example per definition (concise)
+- Natural Vietnamese translations
+- Verbs: include Past/Past Participle/Present Participle
+- Nouns: include Plural in verbs array if applicable
+- IDs start from 0
+''';
 
     final content = [Content.text(prompt)];
     final response = await _model.generateContent(content);
@@ -158,16 +181,17 @@ JSON Schema:
     }
   }
 
-  Future<Map<String, List<String>>> fetchMoreExamples(String word) async {
-    final prompt =
-        '''
-      Generate 2 more examples for the word "$word".
-      Return a JSON object with this format:
-      {
-        "examples_en": ["New example 1", "New example 2"],
-        "examples_vi": ["Translation 1", "Translation 2"]
-      }
-    ''';
+  Future<List<Map<String, String>>> fetchMoreExamples(String word, {String? context}) async {
+    final contextInfo = context != null ? ' in the context of "$context"' : '';
+    final prompt = '''
+Generate 2 example sentences for "$word"$contextInfo.
+Return JSON array:
+[
+  {"text": "English sentence.", "translation": "Câu tiếng Việt."},
+  {"text": "English sentence.", "translation": "Câu tiếng Việt."}
+]
+Rules: Natural, practical examples. Vietnamese must be fluent.
+''';
 
     final content = [Content.text(prompt)];
     final response = await _model.generateContent(content);
@@ -178,19 +202,11 @@ JSON Schema:
 
     try {
       final decoded = jsonDecode(response.text!);
-      if (decoded is Map<String, dynamic>) {
-        return {
-          'examples_en':
-              (decoded['examples_en'] as List<dynamic>?)
-                  ?.map((e) => e.toString())
-                  .toList() ??
-              [],
-          'examples_vi':
-              (decoded['examples_vi'] as List<dynamic>?)
-                  ?.map((e) => e.toString())
-                  .toList() ??
-              [],
-        };
+      if (decoded is List) {
+        return decoded.map((e) => {
+          'text': (e['text'] ?? '').toString(),
+          'translation': (e['translation'] ?? '').toString(),
+        }).toList();
       } else {
         throw Exception('Unexpected JSON format for examples');
       }

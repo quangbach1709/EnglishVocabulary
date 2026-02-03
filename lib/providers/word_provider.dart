@@ -76,14 +76,17 @@ class WordProvider with ChangeNotifier {
     throw Exception('No data found for $wordText');
   }
 
-  /// Adds more examples to a word
-  Future<Word> addExamples(Word originalWord) async {
-    final examples = await _geminiService.fetchMoreExamples(originalWord.word);
+  /// Adds more examples to a word (legacy support)
+  Future<Word> addExamples(Word originalWord, {String? context}) async {
+    final examples = await _geminiService.fetchMoreExamples(originalWord.word, context: context);
 
-    final newExamplesEn = List<String>.from(originalWord.examplesEn)
-      ..addAll(examples['examples_en']!);
-    final newExamplesVi = List<String>.from(originalWord.examplesVi)
-      ..addAll(examples['examples_vi']!);
+    final newExamplesEn = List<String>.from(originalWord.examplesEn);
+    final newExamplesVi = List<String>.from(originalWord.examplesVi);
+    
+    for (var ex in examples) {
+      newExamplesEn.add(ex['text'] ?? '');
+      newExamplesVi.add(ex['translation'] ?? '');
+    }
 
     return originalWord.copyWith(
       examplesEn: newExamplesEn,

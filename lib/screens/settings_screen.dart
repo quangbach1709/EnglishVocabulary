@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../services/tts_service.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
@@ -23,6 +24,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _obscureApiKey = true;
   double _speechRate = 0.5;
   String _selectedLanguage = 'en-US';
+
+  // Notification settings
+  bool _notificationsEnabled = true;
+  List<TimeOfDay> _notificationTimes = [
+    const TimeOfDay(hour: 8, minute: 0),
+    const TimeOfDay(hour: 12, minute: 30),
+    const TimeOfDay(hour: 20, minute: 0),
+  ];
 
   @override
   void initState() {
@@ -49,12 +58,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
             : 'gemini-1.5-flash';
         _speechRate = (settings['speechRate'] ?? 0.5).toDouble();
         _selectedLanguage = settings['ttsLanguage'] ?? 'en-US';
+        _notificationsEnabled = settings['notificationsEnabled'] ?? true;
+
+        // Load notification times
+        final savedTimes = settings['notificationTimes'] as List<dynamic>?;
+        if (savedTimes != null && savedTimes.isNotEmpty) {
+          _notificationTimes = savedTimes.map((t) {
+            if (t is Map) {
+              return TimeOfDay(hour: t['hour'] ?? 8, minute: t['minute'] ?? 0);
+            }
+            return const TimeOfDay(hour: 8, minute: 0);
+          }).toList();
+        }
+
         _isLoading = false;
       });
 
       // Sync TTS service with cloud settings
       await TtsService.instance.setSpeechRate(_speechRate);
       await TtsService.instance.setLanguage(_selectedLanguage);
+
+      // Sync API settings from Firestore to Hive for GeminiService
+      final settingsBox = Hive.box('settings');
+      if (_apiKeyController.text.isNotEmpty) {
+        await settingsBox.put('apiKey', _apiKeyController.text);
+      }
+      if (_modelController.text.isNotEmpty) {
+        await settingsBox.put('modelName', _modelController.text);
+      }
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
@@ -65,10 +96,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// Save a single setting to Firestore
+  /// Save a single setting to Firestore and sync to Hive for GeminiService
   Future<void> _saveSetting(String key, dynamic value) async {
     try {
+      // Save to Firestore (cloud)
       await _firestoreService.updateSetting(key, value);
+
+      // Also sync apiKey and modelName to Hive for GeminiService
+      // GeminiService reads from Hive, not Firestore
+      if (key == 'apiKey' || key == 'modelName') {
+        final settingsBox = Hive.box('settings');
+        await settingsBox.put(key, value);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -83,38 +122,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
     TtsService.instance.speak('This is an example of the English voice.');
   }
 
-  /// Test notification immediately
-  Future<void> _testNotificationNow() async {
+  /// Toggle notifications
+  Future<void> _toggleNotifications(bool enabled) async {
+    setState(() => _notificationsEnabled = enabled);
+    await _saveSetting('notificationsEnabled', enabled);
+
     final notificationService = NotificationService();
-    await notificationService.showTestNotification();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã gửi thông báo test! Kiểm tra thanh thông báo.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+    if (enabled) {
+      await _applyNotificationSchedule();
+    } else {
+      await notificationService.cancelAll();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã tắt thông báo ôn tập'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
     }
   }
 
-  /// Test scheduled notification in 10 seconds
-  Future<void> _testNotificationIn10Seconds() async {
-    final notificationService = NotificationService();
-    await notificationService.scheduleTestNotificationIn(10);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Thông báo sẽ xuất hiện sau 10 giây!'),
-          backgroundColor: Colors.blue,
-        ),
+  /// Add a new notification time
+  Future<void> _addNotificationTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 12, minute: 0),
+      helpText: 'Chọn giờ thông báo',
+    );
+
+    if (picked != null) {
+      // Check if time already exists
+      final exists = _notificationTimes.any(
+        (t) => t.hour == picked.hour && t.minute == picked.minute,
       );
+
+      if (exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Giờ này đã tồn tại!'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() {
+        _notificationTimes.add(picked);
+        _notificationTimes.sort((a, b) {
+          final aMinutes = a.hour * 60 + a.minute;
+          final bMinutes = b.hour * 60 + b.minute;
+          return aMinutes.compareTo(bMinutes);
+        });
+      });
+
+      await _saveNotificationTimes();
     }
   }
 
-  /// Reschedule all notifications
-  Future<void> _rescheduleNotifications() async {
+  /// Remove a notification time
+  Future<void> _removeNotificationTime(int index) async {
+    if (_notificationTimes.length <= 1) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cần ít nhất 1 khung giờ thông báo!'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _notificationTimes.removeAt(index);
+    });
+
+    await _saveNotificationTimes();
+  }
+
+  /// Edit a notification time
+  Future<void> _editNotificationTime(int index) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _notificationTimes[index],
+      helpText: 'Chọn giờ thông báo',
+    );
+
+    if (picked != null) {
+      setState(() {
+        _notificationTimes[index] = picked;
+        _notificationTimes.sort((a, b) {
+          final aMinutes = a.hour * 60 + a.minute;
+          final bMinutes = b.hour * 60 + b.minute;
+          return aMinutes.compareTo(bMinutes);
+        });
+      });
+
+      await _saveNotificationTimes();
+    }
+  }
+
+  /// Save notification times to Firestore
+  Future<void> _saveNotificationTimes() async {
+    final timesData = _notificationTimes
+        .map((t) => {'hour': t.hour, 'minute': t.minute})
+        .toList();
+
+    await _saveSetting('notificationTimes', timesData);
+  }
+
+  /// Apply notification schedule
+  Future<void> _applyNotificationSchedule() async {
     final notificationService = NotificationService();
-    
+
     // Show loading
     showDialog(
       context: context,
@@ -125,10 +248,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await notificationService.initialize();
       final granted = await notificationService.requestPermissions();
-      
+
       if (!granted) {
         if (mounted) {
-          Navigator.pop(context); // Close loading
+          Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Vui lòng cấp quyền thông báo trong cài đặt!'),
@@ -138,86 +261,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
         return;
       }
-      
-      await notificationService.scheduleNext7Days();
+
+      // Update notification service with custom times
+      final schedules = _notificationTimes
+          .map((t) => {'hour': t.hour, 'minute': t.minute})
+          .toList();
+
+      await notificationService.scheduleWithCustomTimes(schedules);
       final pending = await notificationService.getPendingNotifications();
-      
+
       if (mounted) {
-        Navigator.pop(context); // Close loading
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã lên lịch ${pending.length} thông báo cho 7 ngày tới!'),
+            content: Text('Đã lên lịch ${pending.length} thông báo!'),
             backgroundColor: Colors.green,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context); // Close loading
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
         );
       }
     }
   }
 
-  /// Show notification debug info
-  Future<void> _showNotificationDebugInfo() async {
-    final notificationService = NotificationService();
-    final debugInfo = await notificationService.getDebugInfo();
-    
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Debug Info'),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Quyền thông báo:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Text('${debugInfo['permissionsGranted']}'),
-                const SizedBox(height: 12),
-                Text(
-                  'Số thông báo đang chờ: ${debugInfo['pendingCount']}',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                if ((debugInfo['pendingNotifications'] as List).isNotEmpty) ...[
-                  const Text('Các thông báo sắp tới:'),
-                  ...(debugInfo['pendingNotifications'] as List).map((n) => 
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8, top: 4),
-                      child: Text(
-                        '• ID ${n['id']}: ${n['title']}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ),
-                ] else
-                  const Text(
-                    'Không có thông báo nào được lên lịch!',
-                    style: TextStyle(color: Colors.red),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Đóng'),
-            ),
-          ],
-        ),
-      );
-    }
+  String _formatTimeOfDay(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   /// Handle logout
@@ -416,103 +491,205 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // ==========================================
                   // Section C: Notifications
                   // ==========================================
-                  _buildSectionHeader('Thông báo ôn tập', Icons.notifications_active),
+                  _buildSectionHeader(
+                    'Thông báo ôn tập',
+                    Icons.notifications_active,
+                  ),
                   const SizedBox(height: 12),
-                  
-                  // Notification info card
+
+                  // Enable/Disable notifications toggle
                   Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.shade200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    decoration: BoxDecoration(
+                      color: _notificationsEnabled
+                          ? Colors.green.shade50
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _notificationsEnabled
+                            ? Colors.green.shade300
+                            : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Row(
                       children: [
-                        Row(
-                          children: [
-                            Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Lịch thông báo hàng ngày',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue.shade700,
-                              ),
-                            ),
-                          ],
+                        Icon(
+                          _notificationsEnabled
+                              ? Icons.notifications_active
+                              : Icons.notifications_off,
+                          color: _notificationsEnabled
+                              ? Colors.green
+                              : Colors.grey,
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '• 8:00 - Buổi sáng\n'
-                          '• 10:30 - Giữa sáng\n'
-                          '• 12:30 - Buổi trưa\n'
-                          '• 16:00 - Buổi chiều\n'
-                          '• 20:00 - Buổi tối',
-                          style: TextStyle(fontSize: 13),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Thông báo ôn tập',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                _notificationsEnabled ? 'Đang bật' : 'Đang tắt',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: _notificationsEnabled,
+                          onChanged: _toggleNotifications,
+                          activeColor: Colors.green,
                         ),
                       ],
                     ),
                   ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Test notification button
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _testNotificationNow,
-                          icon: const Icon(Icons.notification_add),
-                          label: const Text('Test ngay'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+
+                  if (_notificationsEnabled) ...[
+                    const SizedBox(height: 16),
+
+                    // Custom notification times
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.schedule,
+                                color: Colors.blue.shade700,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Khung giờ thông báo (${_notificationTimes.length} lần/ngày)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.add_circle,
+                                  color: Colors.blue.shade700,
+                                ),
+                                onPressed: _addNotificationTime,
+                                tooltip: 'Thêm khung giờ',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // List of notification times
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: List.generate(_notificationTimes.length, (
+                              index,
+                            ) {
+                              final time = _notificationTimes[index];
+                              return GestureDetector(
+                                onTap: () => _editNotificationTime(index),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: Colors.blue.shade300,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.blue.withOpacity(0.1),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.access_time,
+                                        size: 16,
+                                        color: Colors.blue.shade700,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        _formatTimeOfDay(time),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.blue.shade700,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      GestureDetector(
+                                        onTap: () =>
+                                            _removeNotificationTime(index),
+                                        child: Icon(
+                                          Icons.close,
+                                          size: 16,
+                                          color: Colors.red.shade400,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+
+                          const SizedBox(height: 12),
+                          Text(
+                            'Nhấn vào giờ để chỉnh sửa, nhấn X để xóa',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Apply schedule button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _applyNotificationSchedule,
+                        icon: const Icon(Icons.check_circle),
+                        label: const Text('Áp dụng lịch thông báo'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _testNotificationIn10Seconds,
-                          icon: const Icon(Icons.schedule),
-                          label: const Text('Test sau 10s'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  // Reschedule notifications button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _rescheduleNotifications,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Đặt lại lịch thông báo'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                      ),
                     ),
-                  ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  // Debug info button
-                  TextButton.icon(
-                    onPressed: _showNotificationDebugInfo,
-                    icon: const Icon(Icons.bug_report, size: 18),
-                    label: const Text('Xem thông tin debug'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey.shade600,
-                    ),
-                  ),
+                  ],
 
                   const Divider(height: 32),
 

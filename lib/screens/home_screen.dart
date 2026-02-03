@@ -4,7 +4,7 @@ import '../providers/word_provider.dart';
 import '../models/word.dart';
 import 'add_word_screen.dart';
 import 'learning_screen.dart';
-import 'edit_word_screen.dart';
+import 'word_detail_screen.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
 import 'grammar_list_screen.dart';
@@ -378,32 +378,40 @@ class HomeScreen extends StatelessWidget {
             onChanged: (_) => provider.toggleWordSelection(word),
           ),
           title: Text(word.word),
-          subtitle: Text(word.meaningVi),
+          subtitle: Text(
+            word.allMeaningsVi.isNotEmpty ? word.allMeaningsVi : word.meaningVi,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           selected: isSelected,
           onTap: () {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => LearningScreen(word: word),
+                builder: (context) => WordDetailScreen(word: word),
               ),
             );
           },
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.edit, color: Colors.blue),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EditWordScreen(word: word),
+          trailing: word.pos.isNotEmpty
+              ? Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    word.pos.join(', '),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.w500,
                     ),
-                  );
-                },
-              ),
-            ],
-          ),
+                  ),
+                )
+              : null,
         ),
       ),
     );
