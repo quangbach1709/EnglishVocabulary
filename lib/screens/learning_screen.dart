@@ -187,7 +187,7 @@ class _LearningScreenState extends State<LearningScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                currentWord.meaningVi,
+                currentWord.primaryShortMeaning,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Colors.blue,
@@ -258,20 +258,15 @@ class _LearningScreenState extends State<LearningScreen> {
                   'Examples:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-                ...currentWord.examplesEn.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final exEn = entry.value;
-                  final exVi = currentWord.examplesVi.length > index
-                      ? currentWord.examplesVi[index]
-                      : '';
+                ...currentWord.allExamples.map((example) {
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('- $exEn'),
+                        Text('- ${example.text}'),
                         Text(
-                          '  $exVi',
+                          '  ${example.translation}',
                           style: const TextStyle(color: Colors.grey),
                         ),
                       ],

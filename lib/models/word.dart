@@ -86,13 +86,17 @@ class Definition {
   final int id;
   final String pos; // Part of speech (verb, noun, adj, etc.)
   final String text; // English definition
-  final String translation; // Vietnamese meaning
+  final String
+  shortTranslation; // Short, commonly-used Vietnamese meaning (e.g., "lớp, lớp học")
+  final String
+  translation; // Academic Vietnamese meaning (e.g., "Một nhóm học sinh được dạy cùng nhau")
   final List<ExampleSentence> examples;
 
   Definition({
     required this.id,
     required this.pos,
     required this.text,
+    required this.shortTranslation,
     required this.translation,
     required this.examples,
   });
@@ -102,8 +106,10 @@ class Definition {
       id: json['id'] ?? 0,
       pos: json['pos'] ?? '',
       text: json['text'] ?? '',
+      shortTranslation: json['shortTranslation'] ?? json['translation'] ?? '',
       translation: json['translation'] ?? '',
-      examples: (json['example'] as List<dynamic>?)
+      examples:
+          (json['example'] as List<dynamic>?)
               ?.map((e) => ExampleSentence.fromJson(e))
               .toList() ??
           [],
@@ -114,6 +120,7 @@ class Definition {
     'id': id,
     'pos': pos,
     'text': text,
+    'shortTranslation': shortTranslation,
     'translation': translation,
     'example': examples.map((e) => e.toJson()).toList(),
   };
@@ -125,26 +132,28 @@ class Definition {
 
 class Word {
   final String word;
-  
+
   // New rich data fields
   final List<String> pos; // Parts of speech: ["verb", "noun"]
   final List<VerbForm> verbs; // Verb forms/inflections
   final List<Pronunciation> pronunciations; // Multiple pronunciations
   final List<Definition> definitions; // Definitions with examples
-  
+
   // Legacy fields (for backward compatibility)
   final String ipa; // Primary IPA (computed from pronunciations or legacy)
-  final String meaningVi; // Primary Vietnamese meaning (computed from definitions or legacy)
+  final String
+  meaningVi; // Primary Vietnamese meaning (computed from definitions or legacy)
   final List<String> examplesEn; // Legacy examples
   final List<String> examplesVi; // Legacy examples
-  
+
   String? group;
 
   // SRS (Spaced Repetition System) Fields
   DateTime? nextReviewDate;
   int interval;
   double easeFactor;
-  int status; // 0: New/Forgot (Red), 1: Hard (Orange), 2: Good (Yellow), 3: Easy (Light Green)
+  int
+  status; // 0: New/Forgot (Red), 1: Hard (Orange), 2: Good (Yellow), 3: Easy (Light Green)
 
   Word({
     required this.word,
@@ -175,10 +184,21 @@ class Word {
     return ipa;
   }
 
-  /// Get primary meaning in Vietnamese
+  /// Get primary meaning in Vietnamese (academic/full)
   String get primaryMeaning {
     if (definitions.isNotEmpty) {
       return definitions.first.translation;
+    }
+    return meaningVi;
+  }
+
+  /// Get primary short meaning in Vietnamese (for games/exercises)
+  String get primaryShortMeaning {
+    if (definitions.isNotEmpty) {
+      final shortMeaning = definitions.first.shortTranslation;
+      return shortMeaning.isNotEmpty
+          ? shortMeaning
+          : definitions.first.translation;
     }
     return meaningVi;
   }
@@ -191,26 +211,41 @@ class Word {
     return meaningVi;
   }
 
+  /// Get all short Vietnamese meanings combined
+  String get allShortMeaningsVi {
+    if (definitions.isNotEmpty) {
+      return definitions
+          .map((d) {
+            final short = d.shortTranslation;
+            return short.isNotEmpty ? short : d.translation;
+          })
+          .join('; ');
+    }
+    return meaningVi;
+  }
+
   /// Get all examples (combining new and legacy)
   List<ExampleSentence> get allExamples {
     final List<ExampleSentence> result = [];
-    
+
     // Add examples from definitions
     for (var def in definitions) {
       result.addAll(def.examples);
     }
-    
+
     // Add legacy examples if no definition examples
     if (result.isEmpty && examplesEn.isNotEmpty) {
       for (int i = 0; i < examplesEn.length; i++) {
-        result.add(ExampleSentence(
-          id: i,
-          text: examplesEn[i],
-          translation: i < examplesVi.length ? examplesVi[i] : '',
-        ));
+        result.add(
+          ExampleSentence(
+            id: i,
+            text: examplesEn[i],
+            translation: i < examplesVi.length ? examplesVi[i] : '',
+          ),
+        );
       }
     }
-    
+
     return result;
   }
 
@@ -240,24 +275,36 @@ class Word {
   factory Word.fromMap(Map<String, dynamic> map) {
     return Word(
       word: map['word'] ?? '',
-      pos: (map['pos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
-      verbs: (map['verbs'] as List<dynamic>?)
+      pos:
+          (map['pos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+          [],
+      verbs:
+          (map['verbs'] as List<dynamic>?)
               ?.map((e) => VerbForm.fromJson(e))
-              .toList() ?? [],
-      pronunciations: (map['pronunciations'] as List<dynamic>?)
+              .toList() ??
+          [],
+      pronunciations:
+          (map['pronunciations'] as List<dynamic>?)
               ?.map((e) => Pronunciation.fromJson(e))
-              .toList() ?? [],
-      definitions: (map['definitions'] as List<dynamic>?)
+              .toList() ??
+          [],
+      definitions:
+          (map['definitions'] as List<dynamic>?)
               ?.map((e) => Definition.fromJson(e))
-              .toList() ?? [],
+              .toList() ??
+          [],
       ipa: map['ipa'] ?? '',
       meaningVi: map['meaning_vi'] ?? '',
-      examplesEn: (map['examples_en'] as List<dynamic>?)
+      examplesEn:
+          (map['examples_en'] as List<dynamic>?)
               ?.map((e) => e.toString())
-              .toList() ?? [],
-      examplesVi: (map['examples_vi'] as List<dynamic>?)
+              .toList() ??
+          [],
+      examplesVi:
+          (map['examples_vi'] as List<dynamic>?)
               ?.map((e) => e.toString())
-              .toList() ?? [],
+              .toList() ??
+          [],
       group: map['group'],
       nextReviewDate: map['next_review_date'] != null
           ? (map['next_review_date'] as Timestamp).toDate()
@@ -271,29 +318,39 @@ class Word {
   /// Creates a Word object from JSON (for Gemini API response)
   factory Word.fromJson(Map<String, dynamic> json) {
     // Handle new rich format
-    final posList = (json['pos'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ?? [];
-    final verbsList = (json['verbs'] as List<dynamic>?)
+    final posList =
+        (json['pos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+        [];
+    final verbsList =
+        (json['verbs'] as List<dynamic>?)
             ?.map((e) => VerbForm.fromJson(e))
-            .toList() ?? [];
-    final pronunciationsList = (json['pronunciation'] as List<dynamic>?)
+            .toList() ??
+        [];
+    final pronunciationsList =
+        (json['pronunciation'] as List<dynamic>?)
             ?.map((e) => Pronunciation.fromJson(e))
-            .toList() ?? [];
-    final definitionsList = (json['definition'] as List<dynamic>?)
+            .toList() ??
+        [];
+    final definitionsList =
+        (json['definition'] as List<dynamic>?)
             ?.map((e) => Definition.fromJson(e))
-            .toList() ?? [];
-    
+            .toList() ??
+        [];
+
     // Extract legacy format fields for backward compatibility
     String legacyIpa = json['ipa'] ?? '';
     String legacyMeaningVi = json['meaning_vi'] ?? '';
-    List<String> legacyExamplesEn = (json['examples_en'] as List<dynamic>?)
+    List<String> legacyExamplesEn =
+        (json['examples_en'] as List<dynamic>?)
             ?.map((e) => e.toString())
-            .toList() ?? [];
-    List<String> legacyExamplesVi = (json['examples_vi'] as List<dynamic>?)
+            .toList() ??
+        [];
+    List<String> legacyExamplesVi =
+        (json['examples_vi'] as List<dynamic>?)
             ?.map((e) => e.toString())
-            .toList() ?? [];
-    
+            .toList() ??
+        [];
+
     // If using new format, extract primary values for legacy fields
     if (pronunciationsList.isNotEmpty && legacyIpa.isEmpty) {
       final usPron = pronunciationsList.firstWhere(
@@ -302,7 +359,7 @@ class Word {
       );
       legacyIpa = usPron.pron;
     }
-    
+
     if (definitionsList.isNotEmpty && legacyMeaningVi.isEmpty) {
       legacyMeaningVi = definitionsList.first.translation;
     }

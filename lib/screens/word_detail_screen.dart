@@ -23,8 +23,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   // Controllers for editing
   late TextEditingController _wordController;
   late TextEditingController _ipaController;
-  late TextEditingController _meaningController;
-  
+  late TextEditingController
+  _shortMeaningController; // Short, commonly-used meaning
+  late TextEditingController _meaningController; // Full academic meaning
+
   // Controllers for definitions
   List<_DefinitionControllers> _definitionControllers = [];
 
@@ -37,9 +39,18 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
 
   void _initControllers() {
     _wordController = TextEditingController(text: _word.word);
-    _ipaController = TextEditingController(text: _word.primaryIpa.isNotEmpty ? _word.primaryIpa : _word.ipa);
-    _meaningController = TextEditingController(text: _word.primaryMeaning.isNotEmpty ? _word.primaryMeaning : _word.meaningVi);
-    
+    _ipaController = TextEditingController(
+      text: _word.primaryIpa.isNotEmpty ? _word.primaryIpa : _word.ipa,
+    );
+    _shortMeaningController = TextEditingController(
+      text: _word.primaryShortMeaning, // Short meaning for quick review
+    );
+    _meaningController = TextEditingController(
+      text: _word.primaryMeaning.isNotEmpty
+          ? _word.primaryMeaning
+          : _word.meaningVi,
+    );
+
     _definitionControllers = _word.definitions.map((def) {
       return _DefinitionControllers(
         posController: TextEditingController(text: def.pos),
@@ -53,21 +64,27 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         }).toList(),
       );
     }).toList();
-    
+
     // If no definitions, use legacy format
     if (_definitionControllers.isEmpty && _word.meaningVi.isNotEmpty) {
-      _definitionControllers.add(_DefinitionControllers(
-        posController: TextEditingController(text: _word.pos.isNotEmpty ? _word.pos.first : ''),
-        textController: TextEditingController(text: ''),
-        translationController: TextEditingController(text: _word.meaningVi),
-        exampleControllers: List.generate(
-          _word.examplesEn.length,
-          (i) => _ExampleControllers(
-            textController: TextEditingController(text: _word.examplesEn[i]),
-            translationController: TextEditingController(text: i < _word.examplesVi.length ? _word.examplesVi[i] : ''),
+      _definitionControllers.add(
+        _DefinitionControllers(
+          posController: TextEditingController(
+            text: _word.pos.isNotEmpty ? _word.pos.first : '',
+          ),
+          textController: TextEditingController(text: ''),
+          translationController: TextEditingController(text: _word.meaningVi),
+          exampleControllers: List.generate(
+            _word.examplesEn.length,
+            (i) => _ExampleControllers(
+              textController: TextEditingController(text: _word.examplesEn[i]),
+              translationController: TextEditingController(
+                text: i < _word.examplesVi.length ? _word.examplesVi[i] : '',
+              ),
+            ),
           ),
         ),
-      ));
+      );
     }
   }
 
@@ -75,6 +92,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   void dispose() {
     _wordController.dispose();
     _ipaController.dispose();
+    _shortMeaningController.dispose();
     _meaningController.dispose();
     for (var dc in _definitionControllers) {
       dc.dispose();
@@ -90,24 +108,33 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     setState(() => _isLoading = true);
     try {
       final geminiService = GeminiService();
-      final meaningContext = _definitionControllers[definitionIndex].translationController.text;
-      final newExamples = await geminiService.fetchMoreExamples(_word.word, context: meaningContext);
-      
+      final meaningContext =
+          _definitionControllers[definitionIndex].translationController.text;
+      final newExamples = await geminiService.fetchMoreExamples(
+        _word.word,
+        context: meaningContext,
+      );
+
       setState(() {
         for (var ex in newExamples) {
           _definitionControllers[definitionIndex].exampleControllers.add(
             _ExampleControllers(
               textController: TextEditingController(text: ex['text'] ?? ''),
-              translationController: TextEditingController(text: ex['translation'] ?? ''),
+              translationController: TextEditingController(
+                text: ex['translation'] ?? '',
+              ),
             ),
           );
         }
         _hasChanges = true;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(this.context).showSnackBar(
-          const SnackBar(content: Text('Đã thêm ví dụ mới!'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('Đã thêm ví dụ mới!'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
@@ -136,6 +163,9 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         id: entry.key,
         pos: dc.posController.text,
         text: dc.textController.text,
+        shortTranslation: dc
+            .translationController
+            .text, // Use same as translation for edited words
         translation: dc.translationController.text,
         examples: dc.exampleControllers.asMap().entries.map((exEntry) {
           final ec = exEntry.value;
@@ -160,16 +190,19 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     final provider = Provider.of<WordProvider>(context, listen: false);
     final updatedWord = _buildUpdatedWord();
     await provider.updateWord(updatedWord);
-    
+
     setState(() {
       _word = updatedWord;
       _hasChanges = false;
       _isEditing = false;
     });
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã lưu thay đổi!'), backgroundColor: Colors.green),
+        const SnackBar(
+          content: Text('Đã lưu thay đổi!'),
+          backgroundColor: Colors.green,
+        ),
       );
     }
   }
@@ -250,7 +283,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                   child: _isEditing
                       ? TextField(
                           controller: _wordController,
-                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
                           decoration: const InputDecoration(
                             labelText: 'Từ vựng',
                             border: OutlineInputBorder(),
@@ -259,11 +295,18 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                         )
                       : Text(
                           _word.word,
-                          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.volume_up, size: 32, color: Colors.blue),
+                  icon: const Icon(
+                    Icons.volume_up,
+                    size: 32,
+                    color: Colors.blue,
+                  ),
                   onPressed: () => _speak(_wordController.text),
                 ),
               ],
@@ -284,7 +327,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                 : Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.grey.shade200,
                           borderRadius: BorderRadius.circular(20),
@@ -298,19 +344,65 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                         const SizedBox(width: 12),
                         Wrap(
                           spacing: 6,
-                          children: _word.pos.map((p) => _buildPosChip(p)).toList(),
+                          children: _word.pos
+                              .map((p) => _buildPosChip(p))
+                              .toList(),
                         ),
                       ],
                     ],
                   ),
             const SizedBox(height: 12),
-            // Primary meaning
+            // Short meaning (commonly used)
+            _isEditing
+                ? TextField(
+                    controller: _shortMeaningController,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: const InputDecoration(
+                      labelText: 'Nghĩa ngắn (hay dùng)',
+                      border: OutlineInputBorder(),
+                      hintText: 'VD: lớp học, sách vở',
+                    ),
+                    onChanged: (_) => setState(() => _hasChanges = true),
+                  )
+                : Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.lightbulb_outline,
+                          size: 20,
+                          color: Colors.blue.shade700,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _shortMeaningController.text,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+            const SizedBox(height: 8),
+            // Academic meaning (detailed)
             _isEditing
                 ? TextField(
                     controller: _meaningController,
-                    style: const TextStyle(fontSize: 16),
+                    style: const TextStyle(fontSize: 14),
                     decoration: const InputDecoration(
-                      labelText: 'Nghĩa chính (Tiếng Việt)',
+                      labelText: 'Nghĩa học thuật (chi tiết)',
                       border: OutlineInputBorder(),
                     ),
                     maxLines: null,
@@ -318,7 +410,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                   )
                 : Text(
                     _meaningController.text,
-                    style: TextStyle(fontSize: 18, color: Colors.grey.shade700),
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
           ],
         ),
@@ -405,7 +497,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                 ),
                 Text(
                   v.text,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -426,9 +521,14 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: pron.lang == 'us' ? Colors.blue.shade100 : Colors.red.shade100,
+                    color: pron.lang == 'us'
+                        ? Colors.blue.shade100
+                        : Colors.red.shade100,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -436,15 +536,14 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: pron.lang == 'us' ? Colors.blue.shade700 : Colors.red.shade700,
+                      color: pron.lang == 'us'
+                          ? Colors.blue.shade700
+                          : Colors.red.shade700,
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  pron.pron,
-                  style: const TextStyle(fontSize: 16),
-                ),
+                Text(pron.pron, style: const TextStyle(fontSize: 16)),
                 const Spacer(),
                 if (pron.pos.isNotEmpty)
                   Text(
@@ -452,7 +551,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 IconButton(
-                  icon: const Icon(Icons.play_circle_outline, color: Colors.blue),
+                  icon: const Icon(
+                    Icons.play_circle_outline,
+                    color: Colors.blue,
+                  ),
                   onPressed: () => _speak(_word.word),
                 ),
               ],
@@ -473,7 +575,9 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
           final dc = _definitionControllers[index];
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -506,7 +610,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                                   border: OutlineInputBorder(),
                                 ),
                                 style: const TextStyle(fontSize: 12),
-                                onChanged: (_) => setState(() => _hasChanges = true),
+                                onChanged: (_) =>
+                                    setState(() => _hasChanges = true),
                               ),
                             )
                           : _buildPosChip(dc.posController.text),
@@ -526,16 +631,17 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                           onChanged: (_) => setState(() => _hasChanges = true),
                         )
                       : dc.textController.text.isNotEmpty
-                          ? Text(
-                              dc.textController.text,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontStyle: FontStyle.italic,
-                                color: Colors.black87,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                  if (dc.textController.text.isNotEmpty || _isEditing) const SizedBox(height: 8),
+                      ? Text(
+                          dc.textController.text,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontStyle: FontStyle.italic,
+                            color: Colors.black87,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                  if (dc.textController.text.isNotEmpty || _isEditing)
+                    const SizedBox(height: 8),
 
                   // Vietnamese translation
                   _isEditing
@@ -557,7 +663,11 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.translate, size: 18, color: Colors.green.shade700),
+                              Icon(
+                                Icons.translate,
+                                size: 18,
+                                color: Colors.green.shade700,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -599,7 +709,11 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                     ),
                     const SizedBox(height: 6),
                     ...List.generate(dc.exampleControllers.length, (exIndex) {
-                      return _buildExampleItem(index, exIndex, dc.exampleControllers[exIndex]);
+                      return _buildExampleItem(
+                        index,
+                        exIndex,
+                        dc.exampleControllers[exIndex],
+                      );
                     }),
                   ],
                 ],
@@ -640,7 +754,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                         maxLines: null,
                         onChanged: (_) => setState(() => _hasChanges = true),
                       )
-                    : Text(ec.textController.text, style: const TextStyle(fontSize: 14)),
+                    : Text(
+                        ec.textController.text,
+                        style: const TextStyle(fontSize: 14),
+                      ),
               ),
               IconButton(
                 icon: const Icon(Icons.volume_up, size: 18),
@@ -704,7 +821,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         children: [
           Icon(Icons.assessment, color: Colors.grey.shade600),
           const SizedBox(width: 12),
-          const Text('Trạng thái:', style: TextStyle(fontWeight: FontWeight.w500)),
+          const Text(
+            'Trạng thái:',
+            style: TextStyle(fontWeight: FontWeight.w500),
+          ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

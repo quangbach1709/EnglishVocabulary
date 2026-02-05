@@ -965,18 +965,18 @@ class NotificationService {
     final payload = jsonEncode({
       'type': 'multipleChoice',
       'wordId': word.english,
-      'correctAnswer': word.meaningVi,
+      'correctAnswer': word.primaryShortMeaning,
     });
 
     // Build shuffled action buttons
     final actions = <Map<String, dynamic>>[
-      {'id': actionCorrect, 'label': word.meaningVi},
+      {'id': actionCorrect, 'label': word.primaryShortMeaning},
     ];
 
     for (int i = 0; i < distractors.length && i < 2; i++) {
       actions.add({
         'id': i == 0 ? actionWrong1 : actionWrong2,
-        'label': distractors[i].meaningVi,
+        'label': distractors[i].primaryShortMeaning,
       });
     }
 
@@ -1039,7 +1039,7 @@ class NotificationService {
     final payload = jsonEncode({
       'type': 'directInput',
       'wordId': word.english,
-      'correctAnswer': word.meaningVi,
+      'correctAnswer': word.primaryShortMeaning,
     });
 
     // Build actions with input field

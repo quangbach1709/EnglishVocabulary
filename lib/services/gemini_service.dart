@@ -107,7 +107,8 @@ JSON Schema:
   GeminiService();
 
   Future<List<Word>> fetchWords(String input) async {
-    final prompt = '''
+    final prompt =
+        '''
 Act as a Dictionary API.
 Task: Generate vocabulary data for: "$input"
 If multiple words (comma separated), return ALL.
@@ -130,8 +131,9 @@ Return JSON LIST:
       {
         "id": 0,
         "pos": "noun",
-        "text": "English definition",
-        "translation": "Nghĩa tiếng Việt tự nhiên",
+        "text": "English definition (academic)",
+        "shortTranslation": "Nghĩa ngắn, hay dùng (1-3 từ, VD: lớp học)",
+        "translation": "Nghĩa học thuật đầy đủ (VD: Một nhóm học sinh được dạy cùng nhau)",
         "example": [{"id": 0, "text": "Eng sentence.", "translation": "Câu tiếng Việt."}]
       }
     ]
@@ -141,6 +143,8 @@ Return JSON LIST:
 Rules:
 - 1 example per definition (concise)
 - Natural Vietnamese translations
+- shortTranslation: 1-3 từ đơn giản, hay dùng, dễ nhớ (VD: "học", "sách", "lớp học", "giáo viên")
+- translation: Nghĩa đầy đủ, chi tiết hơn (cho mục đích tham khảo, học thuật)
 - Verbs: include Past/Past Participle/Present Participle
 - Nouns: include Plural in verbs array if applicable
 - IDs start from 0
@@ -181,9 +185,13 @@ Rules:
     }
   }
 
-  Future<List<Map<String, String>>> fetchMoreExamples(String word, {String? context}) async {
+  Future<List<Map<String, String>>> fetchMoreExamples(
+    String word, {
+    String? context,
+  }) async {
     final contextInfo = context != null ? ' in the context of "$context"' : '';
-    final prompt = '''
+    final prompt =
+        '''
 Generate 2 example sentences for "$word"$contextInfo.
 Return JSON array:
 [
@@ -203,10 +211,14 @@ Rules: Natural, practical examples. Vietnamese must be fluent.
     try {
       final decoded = jsonDecode(response.text!);
       if (decoded is List) {
-        return decoded.map((e) => {
-          'text': (e['text'] ?? '').toString(),
-          'translation': (e['translation'] ?? '').toString(),
-        }).toList();
+        return decoded
+            .map(
+              (e) => {
+                'text': (e['text'] ?? '').toString(),
+                'translation': (e['translation'] ?? '').toString(),
+              },
+            )
+            .toList();
       } else {
         throw Exception('Unexpected JSON format for examples');
       }

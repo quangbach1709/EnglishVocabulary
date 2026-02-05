@@ -379,7 +379,9 @@ class HomeScreen extends StatelessWidget {
           ),
           title: Text(word.word),
           subtitle: Text(
-            word.allMeaningsVi.isNotEmpty ? word.allMeaningsVi : word.meaningVi,
+            word.allShortMeaningsVi.isNotEmpty
+                ? word.allShortMeaningsVi
+                : word.primaryShortMeaning,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

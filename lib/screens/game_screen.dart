@@ -53,8 +53,8 @@ class _GameScreenState extends State<GameScreen> {
       if (_isEnglishQuestion) {
         // Question: English -> Options: Vietnamese
         _options = [
-          _targetWord.meaningVi,
-          ...distractors.map((w) => w.meaningVi),
+          _targetWord.primaryShortMeaning,
+          ...distractors.map((w) => w.primaryShortMeaning),
         ];
       } else {
         // Question: Vietnamese -> Options: English
@@ -69,7 +69,7 @@ class _GameScreenState extends State<GameScreen> {
 
     bool correct;
     if (_isEnglishQuestion) {
-      correct = selectedOption == _targetWord.meaningVi;
+      correct = selectedOption == _targetWord.primaryShortMeaning;
     } else {
       correct = selectedOption == _targetWord.word;
     }
@@ -139,7 +139,9 @@ class _GameScreenState extends State<GameScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              _isEnglishQuestion ? _targetWord.word : _targetWord.meaningVi,
+              _isEnglishQuestion
+                  ? _targetWord.word
+                  : _targetWord.primaryShortMeaning,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: Colors.blue,
@@ -152,11 +154,11 @@ class _GameScreenState extends State<GameScreen> {
               if (_showDetails) {
                 if (option ==
                     (_isEnglishQuestion
-                        ? _targetWord.meaningVi
+                        ? _targetWord.primaryShortMeaning
                         : _targetWord.word)) {
                   buttonColor = Colors.green; // Correct answer
                 } else if (_isCorrect == false &&
-                    option == _targetWord.meaningVi) {
+                    option == _targetWord.primaryShortMeaning) {
                   // Highlight correct answer if wrong one was picked (optional logic, simplified here)
                 }
               }
@@ -219,20 +221,15 @@ class _GameScreenState extends State<GameScreen> {
                 'Examples:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              ..._targetWord.examplesEn.asMap().entries.map((entry) {
-                final index = entry.key;
-                final exEn = entry.value;
-                final exVi = _targetWord.examplesVi.length > index
-                    ? _targetWord.examplesVi[index]
-                    : '';
+              ..._targetWord.allExamples.map((example) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('- $exEn'),
+                      Text('- ${example.text}'),
                       Text(
-                        '  $exVi',
+                        '  ${example.translation}',
                         style: const TextStyle(color: Colors.grey),
                       ),
                     ],

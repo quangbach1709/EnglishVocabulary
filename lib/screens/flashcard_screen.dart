@@ -245,7 +245,7 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  currentWord.meaningVi,
+                  currentWord.primaryShortMeaning,
                   style: const TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
