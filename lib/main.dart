@@ -92,19 +92,27 @@ class _AuthWrapperState extends State<AuthWrapper> {
       // Small delay to ensure plugin is ready (important for release builds)
       await Future.delayed(const Duration(milliseconds: 500));
       
-      // Request permissions
-      final granted = await notificationService.requestPermissions();
-      debugPrint('NotificationService: Permissions granted = $granted');
+      // Check permissions first, then request if needed
+      final permissions = await notificationService.checkPermissions();
+      bool granted = permissions['notifications'] ?? false;
+      
+      if (!granted) {
+        granted = await notificationService.requestPermissions();
+        debugPrint('NotificationService: Requesting permissions - result = $granted');
+      }
       
       if (granted) {
+        debugPrint('NotificationService: Re-scheduling for next 7 days to keep content fresh...');
         await notificationService.scheduleNext7Days();
         final pending = await notificationService.getPendingNotifications();
-        debugPrint('NotificationService: ${pending.length} notifications scheduled');
+        debugPrint('NotificationService: Success! ${pending.length} notifications scheduled');
       } else {
-        debugPrint('NotificationService: Permissions not granted');
+        debugPrint('NotificationService: Permissions not granted, skipping schedule');
       }
     } catch (e) {
       debugPrint('NotificationService: Error initializing - $e');
+      // Reset flag on error to allow retry
+      _notificationsInitialized = false;
     }
   }
 

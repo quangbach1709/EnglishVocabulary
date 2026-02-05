@@ -1,8 +1,9 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:provider/provider.dart';
 import '../models/word.dart';
-import '../services/firestore_service.dart';
+import '../providers/word_provider.dart';
 
 class GameScreen extends StatefulWidget {
   final List<Word> words;
@@ -19,6 +20,7 @@ class _GameScreenState extends State<GameScreen> {
   late bool _isEnglishQuestion;
   bool? _isCorrect;
   bool _showDetails = false;
+  bool _firstAttempt = true;
   final FlutterTts flutterTts = FlutterTts();
   final Random _random = Random();
 
@@ -37,6 +39,7 @@ class _GameScreenState extends State<GameScreen> {
     setState(() {
       _showDetails = false;
       _isCorrect = null;
+      _firstAttempt = true;
 
       // Select target word
       _targetWord = widget.words[_random.nextInt(widget.words.length)];
@@ -74,6 +77,16 @@ class _GameScreenState extends State<GameScreen> {
       correct = selectedOption == _targetWord.word;
     }
 
+    if (_firstAttempt) {
+      final provider = Provider.of<WordProvider>(context, listen: false);
+      if (correct) {
+        provider.updateWordSRS(_targetWord, 2); // Good
+      } else {
+        provider.updateWordSRS(_targetWord, 0); // Again
+      }
+      _firstAttempt = false;
+    }
+
     setState(() {
       _isCorrect = correct;
       if (correct) {
@@ -94,7 +107,8 @@ class _GameScreenState extends State<GameScreen> {
     _speak();
 
     // 2. Update SRS (Forgot)
-    await FirestoreService().markWordAsForgot(_targetWord);
+    final provider = Provider.of<WordProvider>(context, listen: false);
+    await provider.updateWordSRS(_targetWord, 0);
 
     // 3. Auto-advance after 2 seconds
     Future.delayed(const Duration(seconds: 2), () {

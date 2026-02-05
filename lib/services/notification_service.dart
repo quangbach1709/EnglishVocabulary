@@ -282,12 +282,10 @@ class NotificationService {
     final actionId = response.actionId;
     final userInput = response.input;
 
-    // CRITICAL: Cancel the persistent notification immediately
-    if (notificationId != null) {
-      NotificationService()._cancelNotification(notificationId);
-    }
-
     if (payload == null || payload.isEmpty) {
+      if (notificationId != null) {
+        NotificationService()._cancelNotification(notificationId);
+      }
       debugPrint('NotificationService: No payload, ignoring');
       return;
     }
@@ -302,8 +300,21 @@ class NotificationService {
     }
 
     final wordId = payloadData['wordId'] as String? ?? payload;
-    // gameType could be 'multipleChoice' or 'directInput' - used for logging
+    final wordText = payloadData['wordText'] as String? ?? wordId;
     final correctAnswer = payloadData['correctAnswer'] as String? ?? '';
+    final type = payloadData['type'] as String? ?? '';
+
+    // If it's a feedback notification, we just want to open the app or cancel
+    if (type == 'feedback') {
+      if (notificationId != null) {
+        NotificationService()._cancelNotification(notificationId);
+      }
+      if (actionId == actionOpenApp || actionId == null) {
+        _lastTappedWordId = wordId;
+        _shouldNavigateToFlashcard = true;
+      }
+      return;
+    }
 
     // Handle based on action
     switch (actionId) {
@@ -311,32 +322,52 @@ class NotificationService {
         // User clicked correct answer
         _handleCorrectAnswer(wordId);
         debugPrint('NotificationService: Correct answer for "$wordId"');
+        
+        if (notificationId != null) {
+          NotificationService()._showInteractiveFeedback(
+            notificationId,
+            isCorrect: true,
+            wordText: wordText,
+            correctAnswer: correctAnswer,
+            wordId: wordId,
+          );
+        }
         break;
 
       case actionWrong1:
       case actionWrong2:
-        // User clicked wrong answer - show feedback notification
-        _lastTappedWordId = wordId;
-        _shouldNavigateToFlashcard = true;
+        // User clicked wrong answer - show feedback notification in-place
         debugPrint('NotificationService: Wrong answer for "$wordId"');
 
-        // Show wrong answer notification with correct answer
-        NotificationService()._showWrongAnswerNotification(
-          wordId,
-          correctAnswer,
-        );
+        if (notificationId != null) {
+          NotificationService()._showInteractiveFeedback(
+            notificationId,
+            isCorrect: false,
+            wordText: wordText,
+            correctAnswer: correctAnswer,
+            wordId: wordId,
+          );
+        }
         break;
 
       case actionShowAnswer:
         // Show answer - display a follow-up notification
+        if (notificationId != null) {
+          NotificationService()._cancelNotification(notificationId);
+        }
         NotificationService()._showAnswerNotification(wordId, correctAnswer);
         break;
 
       case actionOpenApp:
       default:
+        // Cancel first
+        if (notificationId != null) {
+          NotificationService()._cancelNotification(notificationId);
+        }
+        
         // Check if there's user input (Direct Input mode)
         if (userInput != null && userInput.isNotEmpty) {
-          _handleDirectInput(wordId, userInput, correctAnswer);
+          _handleDirectInput(wordId, userInput, correctAnswer, notificationId);
         } else {
           // Navigate to flashcard
           _lastTappedWordId = wordId;
@@ -352,51 +383,69 @@ class NotificationService {
   /// Handle notification response when app was terminated
   @pragma('vm:entry-point')
   static void _onBackgroundNotificationResponse(NotificationResponse response) {
-    debugPrint(
-      'NotificationService: Background response - action: ${response.actionId}, '
-      'payload: ${response.payload}',
+    _onNotificationResponse(response);
+  }
+
+  /// Show in-notification interactive feedback
+  Future<void> _showInteractiveFeedback(
+    int id, {
+    required bool isCorrect,
+    required String wordText,
+    required String correctAnswer,
+    required String wordId,
+  }) async {
+    final title = isCorrect 
+        ? 'Correct! 🎉 $wordText' 
+        : 'Oops! Wrong. $wordText';
+    
+    final body = isCorrect
+        ? '$correctAnswer. Good job!'
+        : 'The meaning is "$correctAnswer"';
+
+    final androidActions = <AndroidNotificationAction>[];
+    
+    if (!isCorrect) {
+      androidActions.add(
+        const AndroidNotificationAction(
+          actionOpenApp,
+          'Review in App',
+          showsUserInterface: true,
+          cancelNotification: true,
+        ),
+      );
+    } else {
+      androidActions.add(
+        const AndroidNotificationAction(
+          'DISMISS',
+          'Dismiss',
+          showsUserInterface: false,
+          cancelNotification: true,
+        ),
+      );
+    }
+
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      autoCancel: true,
+      actions: androidActions,
+      styleInformation: BigTextStyleInformation(body),
     );
 
-    final notificationId = response.id;
-    final payload = response.payload;
-    final actionId = response.actionId;
-    final userInput = response.input;
-
-    // Cancel the persistent notification
-    if (notificationId != null) {
-      NotificationService()._cancelNotification(notificationId);
-    }
-
-    if (payload == null || payload.isEmpty) return;
-
-    // Parse payload
-    Map<String, dynamic> payloadData;
-    try {
-      payloadData = jsonDecode(payload);
-    } catch (e) {
-      payloadData = {'wordId': payload};
-    }
-
-    final wordId = payloadData['wordId'] as String? ?? payload;
-    final correctAnswer = payloadData['correctAnswer'] as String? ?? '';
-
-    if (actionId == actionCorrect) {
-      _handleCorrectAnswer(wordId);
-    } else if (actionId == actionWrong1 || actionId == actionWrong2) {
-      // Wrong answer in multiple choice - show feedback
-      _lastTappedWordId = wordId;
-      _shouldNavigateToFlashcard = true;
-      NotificationService()._showWrongAnswerNotification(wordId, correctAnswer);
-    } else if (actionId == actionShowAnswer) {
-      // Show answer
-      NotificationService()._showAnswerNotification(wordId, correctAnswer);
-    } else if (userInput != null && userInput.isNotEmpty) {
-      // Direct input mode
-      _handleDirectInput(wordId, userInput, correctAnswer);
-    } else {
-      _lastTappedWordId = wordId;
-      _shouldNavigateToFlashcard = true;
-    }
+    await _notifications.show(
+      id,
+      title,
+      body,
+      NotificationDetails(android: androidDetails),
+      payload: jsonEncode({
+        'wordId': wordId,
+        'wordText': wordText,
+        'type': 'feedback',
+      }),
+    );
   }
 
   /// Handle correct answer - update word status
@@ -423,6 +472,7 @@ class NotificationService {
     String wordId,
     String userInput,
     String correctAnswer,
+    int? notificationId,
   ) {
     // Check if answer is correct using flexible matching
     final isCorrect = _isAnswerCorrect(userInput, correctAnswer);
@@ -432,21 +482,39 @@ class NotificationService {
       _handleCorrectAnswer(wordId);
       debugPrint('NotificationService: Direct input CORRECT for "$wordId"');
 
-      // Show success notification
-      NotificationService()._showCorrectAnswerNotification(
-        wordId,
-        correctAnswer,
-      );
+      if (notificationId != null) {
+        NotificationService()._showInteractiveFeedback(
+          notificationId,
+          isCorrect: true,
+          wordText: wordId, // For direct input wordId is usually word text
+          correctAnswer: correctAnswer,
+          wordId: wordId,
+        );
+      } else {
+        // Show success notification
+        NotificationService()._showCorrectAnswerNotification(
+          wordId,
+          correctAnswer,
+        );
+      }
     } else {
       // Wrong - navigate to learn
-      _lastTappedWordId = wordId;
-      _shouldNavigateToFlashcard = true;
       debugPrint(
         'NotificationService: Direct input WRONG - expected "$correctAnswer", got "$userInput"',
       );
 
-      // Show feedback notification
-      NotificationService()._showWrongAnswerNotification(wordId, correctAnswer);
+      if (notificationId != null) {
+        NotificationService()._showInteractiveFeedback(
+          notificationId,
+          isCorrect: false,
+          wordText: wordId,
+          correctAnswer: correctAnswer,
+          wordId: wordId,
+        );
+      } else {
+        // Show feedback notification
+        NotificationService()._showWrongAnswerNotification(wordId, correctAnswer);
+      }
     }
   }
 
@@ -965,6 +1033,7 @@ class NotificationService {
     final payload = jsonEncode({
       'type': 'multipleChoice',
       'wordId': word.english,
+      'wordText': word.word,
       'correctAnswer': word.primaryShortMeaning,
     });
 
@@ -1039,6 +1108,7 @@ class NotificationService {
     final payload = jsonEncode({
       'type': 'directInput',
       'wordId': word.english,
+      'wordText': word.word,
       'correctAnswer': word.primaryShortMeaning,
     });
 

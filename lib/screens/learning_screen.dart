@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:provider/provider.dart';
 import '../models/word.dart';
-import '../services/firestore_service.dart';
+import '../providers/word_provider.dart';
 
 class LearningScreen extends StatefulWidget {
   final Word? word; // For single word learning
@@ -22,6 +23,7 @@ class _LearningScreenState extends State<LearningScreen> {
 
   bool? _isCorrect;
   bool _showDetails = false;
+  bool _firstAttempt = true;
 
   @override
   void initState() {
@@ -54,9 +56,21 @@ class _LearningScreenState extends State<LearningScreen> {
   void _checkAnswer() {
     if (_showDetails) return; // Prevent double check
 
+    final bool correct = _controller.text.trim().toLowerCase() ==
+        currentWord.word.toLowerCase();
+
+    if (_firstAttempt) {
+      final provider = Provider.of<WordProvider>(context, listen: false);
+      if (correct) {
+        provider.updateWordSRS(currentWord, 2); // Good
+      } else {
+        provider.updateWordSRS(currentWord, 0); // Again
+      }
+      _firstAttempt = false;
+    }
+
     setState(() {
-      if (_controller.text.trim().toLowerCase() ==
-          currentWord.word.toLowerCase()) {
+      if (correct) {
         _handleCorrectAnswer();
       } else {
         _isCorrect = false;
@@ -83,18 +97,10 @@ class _LearningScreenState extends State<LearningScreen> {
     _speak();
 
     // 2. Update SRS (Forgot)
-    await FirestoreService().markWordAsForgot(currentWord);
+    final provider = Provider.of<WordProvider>(context, listen: false);
+    await provider.updateWordSRS(currentWord, 0);
 
-    // 3. Auto-advance after 2 seconds
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        if (_currentIndex < _sessionWords.length - 1) {
-          _nextWord();
-        } else {
-          _showCompletionDialog();
-        }
-      }
-    });
+    // 3. The user will manually press "Next" to continue
   }
 
   void _nextWord() {
@@ -112,6 +118,7 @@ class _LearningScreenState extends State<LearningScreen> {
     _controller.clear();
     _isCorrect = null;
     _showDetails = false;
+    _firstAttempt = true;
   }
 
   void _showCompletionDialog() {
