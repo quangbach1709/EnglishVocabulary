@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz_data;
+import 'package:firebase_core/firebase_core.dart';
+import '../firebase_options.dart';
 import '../models/word.dart';
 import 'firestore_service.dart';
 
@@ -75,7 +77,7 @@ class NotificationService {
 
     // Android initialization settings
     const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
+      '@drawable/ic_notification',
     );
 
     // iOS initialization settings
@@ -271,7 +273,7 @@ class NotificationService {
   // ============================================
 
   /// Handle notification response when app is in foreground/background
-  static void _onNotificationResponse(NotificationResponse response) {
+  static void _onNotificationResponse(NotificationResponse response) async {
     debugPrint(
       'NotificationService: Response - action: ${response.actionId}, '
       'payload: ${response.payload}, input: ${response.input}',
@@ -284,7 +286,7 @@ class NotificationService {
 
     if (payload == null || payload.isEmpty) {
       if (notificationId != null) {
-        NotificationService()._cancelNotification(notificationId);
+        await NotificationService()._cancelNotification(notificationId);
       }
       debugPrint('NotificationService: No payload, ignoring');
       return;
@@ -307,7 +309,7 @@ class NotificationService {
     // If it's a feedback notification, we just want to open the app or cancel
     if (type == 'feedback') {
       if (notificationId != null) {
-        NotificationService()._cancelNotification(notificationId);
+        await NotificationService()._cancelNotification(notificationId);
       }
       if (actionId == actionOpenApp || actionId == null) {
         _lastTappedWordId = wordId;
@@ -353,7 +355,7 @@ class NotificationService {
       case actionShowAnswer:
         // Show answer - display a follow-up notification
         if (notificationId != null) {
-          NotificationService()._cancelNotification(notificationId);
+          await NotificationService()._cancelNotification(notificationId);
         }
         NotificationService()._showAnswerNotification(wordId, correctAnswer);
         break;
@@ -362,7 +364,7 @@ class NotificationService {
       default:
         // Cancel first
         if (notificationId != null) {
-          NotificationService()._cancelNotification(notificationId);
+          await NotificationService()._cancelNotification(notificationId);
         }
         
         // Check if there's user input (Direct Input mode)
@@ -382,7 +384,14 @@ class NotificationService {
 
   /// Handle notification response when app was terminated
   @pragma('vm:entry-point')
-  static void _onBackgroundNotificationResponse(NotificationResponse response) {
+  static void _onBackgroundNotificationResponse(NotificationResponse response) async {
+    // Ensure Firebase is initialized for background operations
+    WidgetsFlutterBinding.ensureInitialized();
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
     _onNotificationResponse(response);
   }
 
@@ -395,34 +404,36 @@ class NotificationService {
     required String wordId,
   }) async {
     final title = isCorrect 
-        ? 'Correct! 🎉 $wordText' 
-        : 'Oops! Wrong. $wordText';
+        ? '✅ Chính xác! 🎉' 
+        : '❌ Sai rồi!';
     
     final body = isCorrect
-        ? '$correctAnswer. Good job!'
-        : 'The meaning is "$correctAnswer"';
+        ? 'Từ: $wordText\nNghĩa: $correctAnswer\n\nGiỏi lắm! Tiếp tục phát huy nhé! 💪'
+        : 'Từ: $wordText\nĐáp án đúng là: "$correctAnswer"\n\nCố gắng lên! Học tập sẽ giúp bạn tiến bộ! 📚';
 
     final androidActions = <AndroidNotificationAction>[];
     
     if (!isCorrect) {
+      // Khi sai, có thêm nút để mở app ôn lại
       androidActions.add(
         const AndroidNotificationAction(
           actionOpenApp,
-          'Review in App',
+          '📖 Ôn lại ngay',
           showsUserInterface: true,
           cancelNotification: true,
         ),
       );
-    } else {
-      androidActions.add(
-        const AndroidNotificationAction(
-          'DISMISS',
-          'Dismiss',
-          showsUserInterface: false,
-          cancelNotification: true,
-        ),
-      );
     }
+    
+    // Cả đúng và sai đều có nút đóng thông báo
+    androidActions.add(
+      const AndroidNotificationAction(
+        'DISMISS',
+        '✓ OK',
+        showsUserInterface: false,
+        cancelNotification: true,
+      ),
+    );
 
     final androidDetails = AndroidNotificationDetails(
       _channelId,
@@ -431,7 +442,10 @@ class NotificationService {
       importance: Importance.high,
       priority: Priority.high,
       autoCancel: true,
+      icon: 'ic_notification',
+      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
       actions: androidActions,
+      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
       styleInformation: BigTextStyleInformation(body),
     );
 
@@ -611,6 +625,9 @@ class NotificationService {
       importance: Importance.high,
       priority: Priority.high,
       autoCancel: true,
+      icon: 'ic_notification',
+      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
+      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
       styleInformation: BigTextStyleInformation(
         '✅ Đáp án đúng là:\n\n"$correctAnswer"\n\nNhấn để học thêm!',
       ),
@@ -640,6 +657,9 @@ class NotificationService {
       priority: Priority.high,
       autoCancel: true,
       timeoutAfter: 5000, // Auto dismiss after 5 seconds
+      icon: 'ic_notification',
+      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
+      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
       styleInformation: BigTextStyleInformation(
         '🎉 Chính xác!\n\n"$correctAnswer"\n\nGiỏi lắm, tiếp tục phát huy!',
       ),
@@ -674,6 +694,9 @@ class NotificationService {
       importance: Importance.high,
       priority: Priority.high,
       autoCancel: true,
+      icon: 'ic_notification',
+      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
+      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
       styleInformation: BigTextStyleInformation(
         '❌ Sai rồi!\n\nĐáp án đúng là: "$correctAnswer"\n\nNhấn để ôn lại ngay!',
       ),
@@ -1053,11 +1076,10 @@ class NotificationService {
     actions.shuffle();
 
     final androidActions = actions.map((a) {
-      final isCorrect = a['id'] == actionCorrect;
       return AndroidNotificationAction(
         a['id'] as String,
         a['label'] as String,
-        showsUserInterface: !isCorrect, // Open app if wrong
+        showsUserInterface: false, // Don't open app on answer selection
         cancelNotification: false,
       );
     }).toList();
@@ -1080,6 +1102,8 @@ class NotificationService {
       priority: Priority.max,
       ongoing: true,
       autoCancel: false,
+      icon: 'ic_notification',
+      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
       styleInformation: BigTextStyleInformation(body),
       actions: androidActions,
     );
@@ -1118,7 +1142,7 @@ class NotificationService {
       AndroidNotificationAction(
         actionOpenApp,
         'Trả lời',
-        showsUserInterface: true,
+        showsUserInterface: false,
         cancelNotification: false,
         inputs: <AndroidNotificationActionInput>[
           const AndroidNotificationActionInput(
@@ -1151,6 +1175,8 @@ class NotificationService {
       priority: Priority.max,
       ongoing: true,
       autoCancel: false,
+      icon: 'ic_notification',
+      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
       styleInformation: BigTextStyleInformation(body),
       actions: androidActions,
     );
@@ -1235,6 +1261,8 @@ class NotificationService {
       importance: Importance.max,
       priority: Priority.max,
       autoCancel: true,
+      icon: 'ic_notification',
+      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
     );
 
     final notificationDetails = NotificationDetails(
