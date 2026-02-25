@@ -60,6 +60,22 @@
         <receiver 
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false" />
+
+        <!-- Persistent notification receivers (non-dismissible on Android 14+) -->
+        <receiver
+            android:name=".PersistentAlarmReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".NotificationDismissReceiver"
+            android:exported="false" />
+
+        <!-- Default notification icon and accent colour for all notifications -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_color" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

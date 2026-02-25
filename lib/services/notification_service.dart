@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -8,15 +9,10 @@ import 'package:firebase_core/firebase_core.dart';
 import '../firebase_options.dart';
 import '../models/word.dart';
 import 'firestore_service.dart';
+import 'persistent_notification_channel.dart';
 
-/// Enum representing game modes for interactive notifications
-enum GameMode {
-  multipleChoice, // Game A: Chọn từ đúng
-  directInput, // Game B: Điền từ
-}
-
-/// Singleton service for interactive vocabulary learning notifications
-/// Features: Spaced repetition, Multiple Choice, Direct Input games
+/// Singleton service for vocabulary learning reminders
+/// Features: Spaced repetition reminders
 class NotificationService {
   // Singleton pattern
   static final NotificationService _instance = NotificationService._internal();
@@ -28,20 +24,15 @@ class NotificationService {
   final FirestoreService _firestoreService = FirestoreService();
 
   // Notification channel constants
-  static const String _channelId = 'vocabulary_games';
-  static const String _channelName = 'Vocabulary Games';
+  static const String _channelId = 'vocabulary_reminders';
+  static const String _channelName = 'Vocabulary Reminders';
   static const String _channelDescription =
-      'Interactive vocabulary learning games with quizzes';
+      'Vocabulary learning reminders using spaced repetition';
 
   // ============================================
   // Action Button Identifiers
   // ============================================
   static const String actionOpenApp = 'OPEN_APP';
-  static const String actionShowAnswer = 'SHOW_ANSWER';
-  static const String actionCorrect = 'CORRECT';
-  static const String actionWrong1 = 'WRONG_1';
-  static const String actionWrong2 = 'WRONG_2';
-  static const String inputReplyKey = 'INPUT_REPLY';
 
   // ============================================
   // Scheduling Configuration: 5 times per day for better learning
@@ -75,7 +66,8 @@ class NotificationService {
     tz_data.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
 
-    // Android initialization settings
+    // Android initialization settings — use a dedicated monochrome drawable
+    // so the status bar shows a clean branded icon instead of a solid square.
     const androidSettings = AndroidInitializationSettings(
       '@drawable/ic_notification',
     );
@@ -185,87 +177,35 @@ class NotificationService {
   // ============================================
 
   /// Select a word using spaced repetition algorithm
-  /// Priority 1 (70%): status == 0 (Forgot) - Chua thuoc, can on luyen nhieu
-  /// Priority 2 (20%): status == 1 (Hard) - Kho, can on luyen
-  /// Priority 3 (8%): status == 2 (Good) - Da thuoc, on tap dinh ky
-  /// Priority 4 (2%): status >= 3 (Easy) - Thao roi, on tap it
   Future<Word?> _selectWordBySpacedRepetition(List<Word> allWords) async {
     if (allWords.isEmpty) return null;
 
     final random = Random();
     final roll = random.nextDouble();
 
-    // Status 0: Chua thuoc (Forgot) - can on nhieu nhat
     final forgotWords = allWords.where((w) => w.status == 0).toList();
-
-    // Status 1: Kho (Hard) - can on thuong xuyen
     final hardWords = allWords.where((w) => w.status == 1).toList();
-
-    // Status 2: Da thuoc (Good) - on tap dinh ky
     final goodWords = allWords.where((w) => w.status == 2).toList();
-
-    // Status 3+: Thao roi (Easy) - on tap it
     final easyWords = allWords.where((w) => w.status >= 3).toList();
 
     List<Word> pool;
-    String poolName;
 
     if (roll < 0.70 && forgotWords.isNotEmpty) {
-      // 70% chance: Pick from forgot words (status 0)
       pool = forgotWords;
-      poolName = 'FORGOT (status=0)';
     } else if (roll < 0.90 && hardWords.isNotEmpty) {
-      // 20% chance: Pick from hard words (status 1)
       pool = hardWords;
-      poolName = 'HARD (status=1)';
     } else if (roll < 0.98 && goodWords.isNotEmpty) {
-      // 8% chance: Pick from good words (status 2)
       pool = goodWords;
-      poolName = 'GOOD (status=2)';
     } else if (easyWords.isNotEmpty) {
-      // 2% chance: Pick from easy words (status 3+)
       pool = easyWords;
-      poolName = 'EASY (status>=3)';
     } else if (forgotWords.isNotEmpty) {
-      // Fallback to forgot words
       pool = forgotWords;
-      poolName = 'FALLBACK-FORGOT';
-    } else if (hardWords.isNotEmpty) {
-      pool = hardWords;
-      poolName = 'FALLBACK-HARD';
-    } else if (goodWords.isNotEmpty) {
-      pool = goodWords;
-      poolName = 'FALLBACK-GOOD';
     } else {
-      // Ultimate fallback: Use all words
       pool = allWords;
-      poolName = 'ALL-WORDS';
     }
-
-    debugPrint(
-      'NotificationService: Selected from $poolName pool (${pool.length} words)',
-    );
 
     pool.shuffle();
     return pool.first;
-  }
-
-  /// Get distractor words for multiple choice (different from target)
-  List<Word> _getDistractorWords(
-    Word targetWord,
-    List<Word> allWords,
-    int count,
-  ) {
-    final distractors = <Word>[];
-    final shuffled = List<Word>.from(allWords)..shuffle();
-
-    for (final word in shuffled) {
-      if (word.english != targetWord.english && distractors.length < count) {
-        distractors.add(word);
-      }
-    }
-
-    return distractors;
   }
 
   // ============================================
@@ -273,22 +213,20 @@ class NotificationService {
   // ============================================
 
   /// Handle notification response when app is in foreground/background
-  static void _onNotificationResponse(NotificationResponse response) async {
+  static Future<void> _onNotificationResponse(
+    NotificationResponse response,
+  ) async {
     debugPrint(
-      'NotificationService: Response - action: ${response.actionId}, '
-      'payload: ${response.payload}, input: ${response.input}',
+      'NotificationService: Response - action: ${response.actionId}, payload: ${response.payload}',
     );
 
     final notificationId = response.id;
     final payload = response.payload;
-    final actionId = response.actionId;
-    final userInput = response.input;
 
     if (payload == null || payload.isEmpty) {
       if (notificationId != null) {
-        await NotificationService()._cancelNotification(notificationId);
+        NotificationService()._cancelNotification(notificationId);
       }
-      debugPrint('NotificationService: No payload, ignoring');
       return;
     }
 
@@ -297,425 +235,42 @@ class NotificationService {
     try {
       payloadData = jsonDecode(payload);
     } catch (e) {
-      // Legacy payload format (just word ID)
-      payloadData = {'wordId': payload, 'type': 'unknown'};
+      payloadData = {'wordId': payload};
     }
 
     final wordId = payloadData['wordId'] as String? ?? payload;
-    final wordText = payloadData['wordText'] as String? ?? wordId;
-    final correctAnswer = payloadData['correctAnswer'] as String? ?? '';
-    final type = payloadData['type'] as String? ?? '';
+    final isPersistent = payloadData['persistent'] == true;
 
-    // If it's a feedback notification, we just want to open the app or cancel
-    if (type == 'feedback') {
-      if (notificationId != null) {
-        await NotificationService()._cancelNotification(notificationId);
-      }
-      if (actionId == actionOpenApp || actionId == null) {
-        _lastTappedWordId = wordId;
-        _shouldNavigateToFlashcard = true;
-      }
-      return;
+    // Only cancel notification if NOT in persistent/hardcore mode
+    if (notificationId != null && !isPersistent) {
+      await NotificationService()._cancelNotification(notificationId);
     }
 
-    // Handle based on action
-    switch (actionId) {
-      case actionCorrect:
-        // User clicked correct answer
-        _handleCorrectAnswer(wordId);
-        debugPrint('NotificationService: Correct answer for "$wordId"');
-        
-        if (notificationId != null) {
-          NotificationService()._showInteractiveFeedback(
-            notificationId,
-            isCorrect: true,
-            wordText: wordText,
-            correctAnswer: correctAnswer,
-            wordId: wordId,
-          );
-        }
-        break;
-
-      case actionWrong1:
-      case actionWrong2:
-        // User clicked wrong answer - show feedback notification in-place
-        debugPrint('NotificationService: Wrong answer for "$wordId"');
-
-        if (notificationId != null) {
-          NotificationService()._showInteractiveFeedback(
-            notificationId,
-            isCorrect: false,
-            wordText: wordText,
-            correctAnswer: correctAnswer,
-            wordId: wordId,
-          );
-        }
-        break;
-
-      case actionShowAnswer:
-        // Show answer - display a follow-up notification
-        if (notificationId != null) {
-          await NotificationService()._cancelNotification(notificationId);
-        }
-        NotificationService()._showAnswerNotification(wordId, correctAnswer);
-        break;
-
-      case actionOpenApp:
-      default:
-        // Cancel first
-        if (notificationId != null) {
-          await NotificationService()._cancelNotification(notificationId);
-        }
-        
-        // Check if there's user input (Direct Input mode)
-        if (userInput != null && userInput.isNotEmpty) {
-          _handleDirectInput(wordId, userInput, correctAnswer, notificationId);
-        } else {
-          // Navigate to flashcard
-          _lastTappedWordId = wordId;
-          _shouldNavigateToFlashcard = true;
-          debugPrint(
-            'NotificationService: Navigate to flashcard for "$wordId"',
-          );
-        }
-        break;
-    }
+    // Navigate to flashcard
+    _lastTappedWordId = wordId;
+    _shouldNavigateToFlashcard = true;
+    debugPrint('NotificationService: Navigate to flashcard for "$wordId"');
   }
 
   /// Handle notification response when app was terminated
   @pragma('vm:entry-point')
-  static void _onBackgroundNotificationResponse(NotificationResponse response) async {
-    // Ensure Firebase is initialized for background operations
+  static Future<void> _onBackgroundNotificationResponse(
+    NotificationResponse response,
+  ) async {
     WidgetsFlutterBinding.ensureInitialized();
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
     }
-    _onNotificationResponse(response);
-  }
-
-  /// Show in-notification interactive feedback
-  Future<void> _showInteractiveFeedback(
-    int id, {
-    required bool isCorrect,
-    required String wordText,
-    required String correctAnswer,
-    required String wordId,
-  }) async {
-    final title = isCorrect 
-        ? '✅ Chính xác! 🎉' 
-        : '❌ Sai rồi!';
-    
-    final body = isCorrect
-        ? 'Từ: $wordText\nNghĩa: $correctAnswer\n\nGiỏi lắm! Tiếp tục phát huy nhé! 💪'
-        : 'Từ: $wordText\nĐáp án đúng là: "$correctAnswer"\n\nCố gắng lên! Học tập sẽ giúp bạn tiến bộ! 📚';
-
-    final androidActions = <AndroidNotificationAction>[];
-    
-    if (!isCorrect) {
-      // Khi sai, có thêm nút để mở app ôn lại
-      androidActions.add(
-        const AndroidNotificationAction(
-          actionOpenApp,
-          '📖 Ôn lại ngay',
-          showsUserInterface: true,
-          cancelNotification: true,
-        ),
-      );
-    }
-    
-    // Cả đúng và sai đều có nút đóng thông báo
-    androidActions.add(
-      const AndroidNotificationAction(
-        'DISMISS',
-        '✓ OK',
-        showsUserInterface: false,
-        cancelNotification: true,
-      ),
-    );
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      autoCancel: true,
-      icon: 'ic_notification',
-      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
-      actions: androidActions,
-      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
-      styleInformation: BigTextStyleInformation(body),
-    );
-
-    await _notifications.show(
-      id,
-      title,
-      body,
-      NotificationDetails(android: androidDetails),
-      payload: jsonEncode({
-        'wordId': wordId,
-        'wordText': wordText,
-        'type': 'feedback',
-      }),
-    );
-  }
-
-  /// Handle correct answer - update word status
-  static void _handleCorrectAnswer(String wordId) {
-    debugPrint('NotificationService: Marking "$wordId" as reviewed');
-
-    final firestoreService = FirestoreService();
-    firestoreService
-        .updateWordStatus(
-          wordId,
-          2, // Status 2 = Good
-          DateTime.now().add(const Duration(days: 3)),
-        )
-        .then((_) {
-          debugPrint('NotificationService: Word "$wordId" marked as reviewed');
-        })
-        .catchError((e) {
-          debugPrint('NotificationService: Error updating word: $e');
-        });
-  }
-
-  /// Handle direct input from user
-  static void _handleDirectInput(
-    String wordId,
-    String userInput,
-    String correctAnswer,
-    int? notificationId,
-  ) {
-    // Check if answer is correct using flexible matching
-    final isCorrect = _isAnswerCorrect(userInput, correctAnswer);
-
-    if (isCorrect) {
-      // Correct!
-      _handleCorrectAnswer(wordId);
-      debugPrint('NotificationService: Direct input CORRECT for "$wordId"');
-
-      if (notificationId != null) {
-        NotificationService()._showInteractiveFeedback(
-          notificationId,
-          isCorrect: true,
-          wordText: wordId, // For direct input wordId is usually word text
-          correctAnswer: correctAnswer,
-          wordId: wordId,
-        );
-      } else {
-        // Show success notification
-        NotificationService()._showCorrectAnswerNotification(
-          wordId,
-          correctAnswer,
-        );
-      }
-    } else {
-      // Wrong - navigate to learn
-      debugPrint(
-        'NotificationService: Direct input WRONG - expected "$correctAnswer", got "$userInput"',
-      );
-
-      if (notificationId != null) {
-        NotificationService()._showInteractiveFeedback(
-          notificationId,
-          isCorrect: false,
-          wordText: wordId,
-          correctAnswer: correctAnswer,
-          wordId: wordId,
-        );
-      } else {
-        // Show feedback notification
-        NotificationService()._showWrongAnswerNotification(wordId, correctAnswer);
-      }
-    }
-  }
-
-  /// Flexible answer matching
-  /// Returns true if userInput matches any acceptable form of correctAnswer
-  static bool _isAnswerCorrect(String userInput, String correctAnswer) {
-    // Normalize input
-    final input = _normalizeText(userInput);
-    final correct = _normalizeText(correctAnswer);
-
-    // 1. Exact match after normalization
-    if (input == correct) return true;
-
-    // 2. Split correct answer by common separators and check each part
-    // Separators: comma, semicolon, slash, "hoặc", "hay", parentheses content
-    final separators = RegExp(r'[,;/]|\s+hoặc\s+|\s+hay\s+');
-    final correctParts = correct
-        .split(separators)
-        .map((s) => _normalizeText(s))
-        .where((s) => s.isNotEmpty)
-        .toList();
-
-    // Check if input matches any part exactly
-    for (final part in correctParts) {
-      if (input == part) return true;
-    }
-
-    // 3. Check if input is contained in correct answer (for partial match)
-    // e.g., correct = "học sinh, sinh viên", input = "học sinh" -> match
-    if (correct.contains(input) && input.length >= 2) return true;
-
-    // 4. Check if any part of correct answer is contained in input
-    for (final part in correctParts) {
-      if (part.isNotEmpty && input.contains(part) && part.length >= 2)
-        return true;
-    }
-
-    // 5. Remove content in parentheses from correct answer and check
-    // e.g., correct = "học sinh (n)", input = "học sinh" -> match
-    final correctWithoutParens = _normalizeText(
-      correct.replaceAll(RegExp(r'\([^)]*\)'), ''),
-    );
-    if (input == correctWithoutParens) return true;
-
-    // 6. Check similarity for typo tolerance (Levenshtein-like)
-    // If the input is very similar (>80% match), consider it correct
-    for (final part in correctParts) {
-      if (_calculateSimilarity(input, part) > 0.8) return true;
-    }
-
-    return false;
-  }
-
-  /// Normalize text for comparison
-  static String _normalizeText(String text) {
-    var result = text.trim().toLowerCase();
-    // Replace multiple spaces with single space
-    result = result.replaceAll(RegExp(r'\s+'), ' ');
-    // Remove trailing punctuation
-    result = result.replaceAll(RegExp(r'[.,!?;:]+$'), '');
-    return result;
-  }
-
-  /// Calculate similarity between two strings (0.0 to 1.0)
-  static double _calculateSimilarity(String s1, String s2) {
-    if (s1 == s2) return 1.0;
-    if (s1.isEmpty || s2.isEmpty) return 0.0;
-
-    final longer = s1.length > s2.length ? s1 : s2;
-    final shorter = s1.length > s2.length ? s2 : s1;
-
-    if (longer.isEmpty) return 1.0;
-
-    // Simple similarity based on common characters
-    int matches = 0;
-    for (int i = 0; i < shorter.length; i++) {
-      if (i < longer.length && shorter[i] == longer[i]) {
-        matches++;
-      }
-    }
-
-    return matches / longer.length;
-  }
-
-  /// Show notification with the answer (when user clicks "Show Answer")
-  Future<void> _showAnswerNotification(
-    String wordId,
-    String correctAnswer,
-  ) async {
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      autoCancel: true,
-      icon: 'ic_notification',
-      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
-      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
-      styleInformation: BigTextStyleInformation(
-        '✅ Đáp án đúng là:\n\n"$correctAnswer"\n\nNhấn để học thêm!',
-      ),
-    );
-
-    final notificationDetails = NotificationDetails(android: androidDetails);
-
-    await _notifications.show(
-      998, // Special ID for answer notification
-      '📖 Đáp án',
-      'Từ: $wordId - $correctAnswer',
-      notificationDetails,
-      payload: wordId,
-    );
-  }
-
-  /// Show correct answer feedback notification (when user answers correctly)
-  Future<void> _showCorrectAnswerNotification(
-    String wordId,
-    String correctAnswer,
-  ) async {
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      autoCancel: true,
-      timeoutAfter: 5000, // Auto dismiss after 5 seconds
-      icon: 'ic_notification',
-      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
-      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
-      styleInformation: BigTextStyleInformation(
-        '🎉 Chính xác!\n\n"$correctAnswer"\n\nGiỏi lắm, tiếp tục phát huy!',
-      ),
-    );
-
-    final notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: const DarwinNotificationDetails(
-        presentAlert: true,
-        presentSound: true,
-      ),
-    );
-
-    await _notifications.show(
-      996, // Special ID for correct answer notification
-      '✅ Đúng rồi!',
-      correctAnswer,
-      notificationDetails,
-      payload: wordId,
-    );
-  }
-
-  /// Show wrong answer feedback notification
-  Future<void> _showWrongAnswerNotification(
-    String wordId,
-    String correctAnswer,
-  ) async {
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      autoCancel: true,
-      icon: 'ic_notification',
-      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
-      largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
-      styleInformation: BigTextStyleInformation(
-        '❌ Sai rồi!\n\nĐáp án đúng là: "$correctAnswer"\n\nNhấn để ôn lại ngay!',
-      ),
-    );
-
-    final notificationDetails = NotificationDetails(android: androidDetails);
-
-    await _notifications.show(
-      997, // Special ID for wrong answer notification
-      '❌ Sai rồi!',
-      'Đáp án: $correctAnswer',
-      notificationDetails,
-      payload: wordId,
-    );
+    await Future.delayed(const Duration(milliseconds: 300));
+    await _onNotificationResponse(response);
   }
 
   /// Cancel a specific notification by ID
   Future<void> _cancelNotification(int id) async {
     await _notifications.cancel(id);
+    await PersistentNotificationChannel.cancelAlarm(id);
     debugPrint('NotificationService: Cancelled notification $id');
   }
 
@@ -724,42 +279,33 @@ class NotificationService {
   // ============================================
 
   /// Schedule notifications for TODAY and the next 7 days
-  /// 5 notifications per day = up to 40 total
   Future<void> scheduleNext7Days() async {
-    // Cancel all existing notifications
     await _notifications.cancelAll();
+    await PersistentNotificationChannel.cancelAll();
     debugPrint('NotificationService: Cancelled all existing notifications');
 
-    // Fetch all words
     List<Word> allWords = [];
+    bool isPersistentMode = false;
     try {
       allWords = await _firestoreService.getAllWords();
-      debugPrint('NotificationService: Fetched ${allWords.length} words');
+      final settings = await _firestoreService.fetchUserSettings();
+      isPersistentMode = settings['isPersistentMode'] ?? false;
     } catch (e) {
-      debugPrint('NotificationService: Error fetching words: $e');
+      debugPrint('NotificationService: Error fetching data: $e');
       return;
     }
 
-    if (allWords.length < 3) {
-      debugPrint(
-        'NotificationService: Not enough words (need at least 3), skipping',
-      );
-      return;
-    }
+    if (allWords.isEmpty) return;
 
     int totalScheduled = 0;
-    final random = Random();
     final now = tz.TZDateTime.now(tz.local);
 
-    // ========================================
-    // STEP 1: Schedule for TODAY (remaining time slots)
-    // ========================================
+    // Schedule for TODAY
     for (int slotIndex = 0; slotIndex < _dailySchedules.length; slotIndex++) {
       final schedule = _dailySchedules[slotIndex];
       final hour = schedule['hour']!;
       final minute = schedule['minute']!;
 
-      // Check if this time slot is still in the future
       final todaySlot = tz.TZDateTime(
         tz.local,
         now.year,
@@ -770,54 +316,29 @@ class NotificationService {
       );
 
       if (todaySlot.isAfter(now)) {
-        // This slot is still in the future today - schedule it!
         final word = await _selectWordBySpacedRepetition(allWords);
         if (word == null) continue;
 
-        final gameMode = random.nextBool()
-            ? GameMode.multipleChoice
-            : GameMode.directInput;
-        final distractors = _getDistractorWords(word, allWords, 2);
-
-        // Unique ID for today: 1000 + slotIndex
         final notificationId = 1000 + slotIndex;
-
-        await _scheduleGameNotification(
+        await _scheduleReminderNotification(
           id: notificationId,
           word: word,
-          gameMode: gameMode,
           scheduledDate: todaySlot,
-          distractors: distractors,
-        );
-
-        debugPrint(
-          'NotificationService: Scheduled TODAY ID $notificationId - '
-          '${hour}:${minute.toString().padLeft(2, '0')} - ${gameMode.name} for "${word.word}"',
+          isPersistentMode: isPersistentMode,
         );
         totalScheduled++;
       }
     }
 
-    // ========================================
-    // STEP 2: Schedule for the next 7 days
-    // ========================================
+    // Schedule for the next 7 days
     for (int dayIndex = 1; dayIndex <= 7; dayIndex++) {
       for (int slotIndex = 0; slotIndex < _dailySchedules.length; slotIndex++) {
         final schedule = _dailySchedules[slotIndex];
         final hour = schedule['hour']!;
         final minute = schedule['minute']!;
 
-        // Select word using spaced repetition
         final word = await _selectWordBySpacedRepetition(allWords);
         if (word == null) continue;
-
-        // Randomly select game mode
-        final gameMode = random.nextBool()
-            ? GameMode.multipleChoice
-            : GameMode.directInput;
-
-        // Get distractors for multiple choice
-        final distractors = _getDistractorWords(word, allWords, 2);
 
         final scheduledDate = tz.TZDateTime(
           tz.local,
@@ -828,135 +349,51 @@ class NotificationService {
           minute,
         );
 
-        // Unique ID: (dayIndex * 10) + slotIndex
         final notificationId = (dayIndex * 10) + slotIndex;
-
-        await _scheduleGameNotification(
+        await _scheduleReminderNotification(
           id: notificationId,
           word: word,
-          gameMode: gameMode,
           scheduledDate: scheduledDate,
-          distractors: distractors,
+          isPersistentMode: isPersistentMode,
         );
-
-        debugPrint(
-          'NotificationService: Scheduled ID $notificationId - '
-          'Day +$dayIndex, ${hour}:${minute.toString().padLeft(2, '0')} - ${gameMode.name} for "${word.word}"',
-        );
-
         totalScheduled++;
       }
     }
 
-    debugPrint(
-      'NotificationService: Total scheduled: $totalScheduled notifications',
-    );
-
-    // Log pending notifications for debugging
-    final pending = await getPendingNotifications();
-    debugPrint(
-      'NotificationService: Pending notifications count: ${pending.length}',
-    );
-    for (final p in pending.take(5)) {
-      debugPrint('  - ID ${p.id}: ${p.title}');
-    }
+    debugPrint('NotificationService: Total scheduled: $totalScheduled');
   }
 
   /// Schedule notifications with custom times from user settings
   Future<void> scheduleWithCustomTimes(
     List<Map<String, int>> customSchedules,
   ) async {
-    // Cancel all existing notifications
     await _notifications.cancelAll();
+    await PersistentNotificationChannel.cancelAll();
     debugPrint('NotificationService: Cancelled all existing notifications');
 
-    if (customSchedules.isEmpty) {
-      debugPrint('NotificationService: No custom schedules provided');
-      return;
-    }
+    if (customSchedules.isEmpty) return;
 
-    // Fetch all words
     List<Word> allWords = [];
+    bool isPersistentMode = false;
     try {
       allWords = await _firestoreService.getAllWords();
-      debugPrint('NotificationService: Fetched ${allWords.length} words');
+      final settings = await _firestoreService.fetchUserSettings();
+      isPersistentMode = settings['isPersistentMode'] ?? false;
     } catch (e) {
-      debugPrint('NotificationService: Error fetching words: $e');
+      debugPrint('NotificationService: Error fetching data: $e');
       return;
     }
 
-    if (allWords.length < 3) {
-      debugPrint(
-        'NotificationService: Not enough words (need at least 3), skipping',
-      );
-      return;
-    }
+    if (allWords.isEmpty) return;
 
     int totalScheduled = 0;
-    final random = Random();
     final now = tz.TZDateTime.now(tz.local);
 
-    // ========================================
-    // STEP 1: Schedule for TODAY (remaining time slots)
-    // ========================================
-    for (int slotIndex = 0; slotIndex < customSchedules.length; slotIndex++) {
-      final schedule = customSchedules[slotIndex];
-      final hour = schedule['hour'] ?? 8;
-      final minute = schedule['minute'] ?? 0;
-
-      // Check if this time slot is still in the future
-      final todaySlot = tz.TZDateTime(
-        tz.local,
-        now.year,
-        now.month,
-        now.day,
-        hour,
-        minute,
-      );
-
-      if (todaySlot.isAfter(now)) {
-        final word = await _selectWordBySpacedRepetition(allWords);
-        if (word == null) continue;
-
-        final gameMode = random.nextBool()
-            ? GameMode.multipleChoice
-            : GameMode.directInput;
-        final distractors = _getDistractorWords(word, allWords, 2);
-
-        final notificationId = 1000 + slotIndex;
-
-        await _scheduleGameNotification(
-          id: notificationId,
-          word: word,
-          gameMode: gameMode,
-          scheduledDate: todaySlot,
-          distractors: distractors,
-        );
-
-        debugPrint(
-          'NotificationService: Scheduled TODAY ID $notificationId - '
-          '${hour}:${minute.toString().padLeft(2, '0')} - ${gameMode.name} for "${word.word}"',
-        );
-        totalScheduled++;
-      }
-    }
-
-    // ========================================
-    // STEP 2: Schedule for the next 7 days
-    // ========================================
-    for (int dayIndex = 1; dayIndex <= 7; dayIndex++) {
+    for (int dayIndex = 0; dayIndex <= 7; dayIndex++) {
       for (int slotIndex = 0; slotIndex < customSchedules.length; slotIndex++) {
         final schedule = customSchedules[slotIndex];
         final hour = schedule['hour'] ?? 8;
         final minute = schedule['minute'] ?? 0;
-
-        final word = await _selectWordBySpacedRepetition(allWords);
-        if (word == null) continue;
-
-        final gameMode = random.nextBool()
-            ? GameMode.multipleChoice
-            : GameMode.directInput;
-        final distractors = _getDistractorWords(word, allWords, 2);
 
         final scheduledDate = tz.TZDateTime(
           tz.local,
@@ -967,132 +404,80 @@ class NotificationService {
           minute,
         );
 
-        final notificationId = (dayIndex * 100) + slotIndex;
+        if (scheduledDate.isAfter(now)) {
+          final word = await _selectWordBySpacedRepetition(allWords);
+          if (word == null) continue;
 
-        await _scheduleGameNotification(
-          id: notificationId,
-          word: word,
-          gameMode: gameMode,
-          scheduledDate: scheduledDate,
-          distractors: distractors,
-        );
-
-        debugPrint(
-          'NotificationService: Scheduled ID $notificationId - '
-          'Day +$dayIndex, ${hour}:${minute.toString().padLeft(2, '0')} - ${gameMode.name} for "${word.word}"',
-        );
-
-        totalScheduled++;
+          final notificationId = (dayIndex * 100) + slotIndex;
+          await _scheduleReminderNotification(
+            id: notificationId,
+            word: word,
+            scheduledDate: scheduledDate,
+            isPersistentMode: isPersistentMode,
+          );
+          totalScheduled++;
+        }
       }
     }
-
-    debugPrint(
-      'NotificationService: Total scheduled with custom times: $totalScheduled notifications',
-    );
-
-    final pending = await getPendingNotifications();
-    debugPrint(
-      'NotificationService: Pending notifications count: ${pending.length}',
-    );
+    debugPrint('NotificationService: Total custom scheduled: $totalScheduled');
   }
 
   // ============================================
-  // Game Notification Builders
+  // Reminder Notification Builders
   // ============================================
 
-  /// Schedule a game notification
-  Future<void> _scheduleGameNotification({
+  /// Schedule a reminder notification
+  Future<void> _scheduleReminderNotification({
     required int id,
     required Word word,
-    required GameMode gameMode,
     required tz.TZDateTime scheduledDate,
-    required List<Word> distractors,
+    bool isPersistentMode = false,
   }) async {
-    late NotificationDetails notificationDetails;
-    late String title;
-    late String body;
-    late String payload;
+    final result = _buildReminderNotification(
+      word,
+      isPersistentMode: isPersistentMode,
+    );
 
-    switch (gameMode) {
-      case GameMode.multipleChoice:
-        final result = _buildMultipleChoiceNotification(word, distractors);
-        title = result['title']!;
-        body = result['body']!;
-        payload = result['payload']!;
-        notificationDetails = result['details'] as NotificationDetails;
-        break;
-
-      case GameMode.directInput:
-        final result = _buildDirectInputNotification(word);
-        title = result['title']!;
-        body = result['body']!;
-        payload = result['payload']!;
-        notificationDetails = result['details'] as NotificationDetails;
-        break;
+    // Trên Android với persistent mode: dùng native alarm + setDeleteIntent
+    // để notification tự re-show khi bị dismiss (Android 14+ không ngăn swipe nữa).
+    if (isPersistentMode && Platform.isAndroid) {
+      await PersistentNotificationChannel.scheduleAlarm(
+        id: id,
+        timeMs: scheduledDate.millisecondsSinceEpoch,
+        title: result['title']!,
+        body: result['body']!,
+        payload: result['payload']!,
+      );
+      return;
     }
 
     await _notifications.zonedSchedule(
       id,
-      title,
-      body,
+      result['title']!,
+      result['body']!,
       scheduledDate,
-      notificationDetails,
+      result['details'] as NotificationDetails,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      payload: payload,
+      payload: result['payload']!,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
     );
   }
 
-  /// Build Multiple Choice notification (Game Mode A)
-  Map<String, dynamic> _buildMultipleChoiceNotification(
-    Word word,
-    List<Word> distractors,
-  ) {
-    final title = '🎯 Nghĩa của "${word.word}" là gì?';
-    final body = 'Phát âm: [${word.ipa}]\nChọn đáp án đúng bên dưới!';
+  /// Build a simple reminder notification
+  Map<String, dynamic> _buildReminderNotification(
+    Word word, {
+    bool isPersistentMode = false,
+  }) {
+    final title = '💡 Ôn tập từ: ${word.word}';
+    final body = 'Phát âm: [${word.ipa}]\nNghĩa: ${word.primaryShortMeaning}';
 
-    // Create payload with game data
     final payload = jsonEncode({
-      'type': 'multipleChoice',
       'wordId': word.english,
       'wordText': word.word,
-      'correctAnswer': word.primaryShortMeaning,
+      'type': 'reminder',
+      'persistent': isPersistentMode,
     });
-
-    // Build shuffled action buttons
-    final actions = <Map<String, dynamic>>[
-      {'id': actionCorrect, 'label': word.primaryShortMeaning},
-    ];
-
-    for (int i = 0; i < distractors.length && i < 2; i++) {
-      actions.add({
-        'id': i == 0 ? actionWrong1 : actionWrong2,
-        'label': distractors[i].primaryShortMeaning,
-      });
-    }
-
-    // Shuffle the actions so correct isn't always first
-    actions.shuffle();
-
-    final androidActions = actions.map((a) {
-      return AndroidNotificationAction(
-        a['id'] as String,
-        a['label'] as String,
-        showsUserInterface: false, // Don't open app on answer selection
-        cancelNotification: false,
-      );
-    }).toList();
-
-    // Add "Open App" button
-    androidActions.add(
-      const AndroidNotificationAction(
-        actionOpenApp,
-        '📖 Mở App',
-        showsUserInterface: true,
-        cancelNotification: false,
-      ),
-    );
 
     final androidDetails = AndroidNotificationDetails(
       _channelId,
@@ -1100,85 +485,13 @@ class NotificationService {
       channelDescription: _channelDescription,
       importance: Importance.max,
       priority: Priority.max,
-      ongoing: true,
-      autoCancel: false,
-      icon: 'ic_notification',
-      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
+      ongoing: isPersistentMode,
+      autoCancel: !isPersistentMode,
       styleInformation: BigTextStyleInformation(body),
-      actions: androidActions,
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    return {
-      'title': title,
-      'body': body,
-      'payload': payload,
-      'details': NotificationDetails(android: androidDetails, iOS: iosDetails),
-    };
-  }
-
-  /// Build Direct Input notification (Game Mode B)
-  Map<String, dynamic> _buildDirectInputNotification(Word word) {
-    final title = '✍️ Điền nghĩa tiếng Việt:';
-    final body =
-        'Word: ${word.word} [${word.ipa}]\n\nNhập đáp án hoặc nhấn "Hiện đáp án"';
-
-    // Create payload with game data
-    final payload = jsonEncode({
-      'type': 'directInput',
-      'wordId': word.english,
-      'wordText': word.word,
-      'correctAnswer': word.primaryShortMeaning,
-    });
-
-    // Build actions with input field
-    final androidActions = <AndroidNotificationAction>[
-      // Input field action
-      AndroidNotificationAction(
-        actionOpenApp,
-        'Trả lời',
-        showsUserInterface: false,
-        cancelNotification: false,
-        inputs: <AndroidNotificationActionInput>[
-          const AndroidNotificationActionInput(
-            label: 'Nhập đáp án...',
-            allowFreeFormInput: true,
-          ),
-        ],
-      ),
-      // Show answer button
-      const AndroidNotificationAction(
-        actionShowAnswer,
-        '👀 Hiện đáp án',
-        showsUserInterface: false,
-        cancelNotification: false,
-      ),
-      // Open app button
-      const AndroidNotificationAction(
-        actionOpenApp,
-        '📖 Mở App',
-        showsUserInterface: true,
-        cancelNotification: false,
-      ),
-    ];
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.max,
-      priority: Priority.max,
-      ongoing: true,
-      autoCancel: false,
+      // Explicit monochrome icon for the status bar
       icon: 'ic_notification',
-      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
-      styleInformation: BigTextStyleInformation(body),
-      actions: androidActions,
+      // Tint the icon with the app's primary blue colour
+      color: const Color(0xFF2196F3),
     );
 
     const iosDetails = DarwinNotificationDetails(
@@ -1202,154 +515,42 @@ class NotificationService {
   /// Show an immediate test notification
   Future<void> showTestNotification() async {
     List<Word> words = [];
+    bool isPersistentMode = false;
     try {
       words = await _firestoreService.getAllWords();
+      final settings = await _firestoreService.fetchUserSettings();
+      isPersistentMode = settings['isPersistentMode'] ?? false;
     } catch (e) {
-      debugPrint('NotificationService: Error fetching words: $e');
+      debugPrint('NotificationService: Error fetching data: $e');
       return;
     }
 
-    if (words.length < 3) {
-      debugPrint('NotificationService: Not enough words for test');
-      // Show a simple notification to verify notifications work
-      await _showSimpleNotification(
-        'Test Notification',
-        'Notifications are working! But you need at least 3 words.',
-      );
-      return;
-    }
+    if (words.isEmpty) return;
 
     final random = Random();
     final testWord = words[random.nextInt(words.length)];
-    final distractors = _getDistractorWords(testWord, words, 2);
-    final gameMode = random.nextBool()
-        ? GameMode.multipleChoice
-        : GameMode.directInput;
-
-    late NotificationDetails details;
-    late String title;
-    late String body;
-    late String payload;
-
-    if (gameMode == GameMode.multipleChoice) {
-      final result = _buildMultipleChoiceNotification(testWord, distractors);
-      title = result['title']!;
-      body = result['body']!;
-      payload = result['payload']!;
-      details = result['details'] as NotificationDetails;
-    } else {
-      final result = _buildDirectInputNotification(testWord);
-      title = result['title']!;
-      body = result['body']!;
-      payload = result['payload']!;
-      details = result['details'] as NotificationDetails;
-    }
-
-    await _notifications.show(999, title, body, details, payload: payload);
-
-    debugPrint(
-      'NotificationService: Test - ${gameMode.name} for "${testWord.word}"',
-    );
-  }
-
-  /// Show a simple notification (for testing purposes)
-  Future<void> _showSimpleNotification(String title, String body) async {
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.max,
-      priority: Priority.max,
-      autoCancel: true,
-      icon: 'ic_notification',
-      color: const Color(0xFF2196F3), // Material Blue - customize to your brand
+    final result = _buildReminderNotification(
+      testWord,
+      isPersistentMode: isPersistentMode,
     );
 
-    final notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: const DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      ),
+    await _notifications.show(
+      999,
+      result['title']!,
+      result['body']!,
+      result['details'] as NotificationDetails,
+      payload: result['payload']!,
     );
-
-    await _notifications.show(888, title, body, notificationDetails);
-    debugPrint('NotificationService: Simple notification shown');
-  }
-
-  /// Schedule a test notification in [seconds] seconds
-  /// This helps verify that scheduled notifications work
-  Future<void> scheduleTestNotificationIn(int seconds) async {
-    List<Word> words = [];
-    try {
-      words = await _firestoreService.getAllWords();
-    } catch (e) {
-      debugPrint('NotificationService: Error fetching words: $e');
-      return;
-    }
-
-    if (words.length < 3) {
-      debugPrint('NotificationService: Not enough words for scheduled test');
-      return;
-    }
-
-    final random = Random();
-    final testWord = words[random.nextInt(words.length)];
-    final distractors = _getDistractorWords(testWord, words, 2);
-    final gameMode = random.nextBool()
-        ? GameMode.multipleChoice
-        : GameMode.directInput;
-
-    final scheduledDate = tz.TZDateTime.now(
-      tz.local,
-    ).add(Duration(seconds: seconds));
-
-    await _scheduleGameNotification(
-      id: 777,
-      word: testWord,
-      gameMode: gameMode,
-      scheduledDate: scheduledDate,
-      distractors: distractors,
-    );
-
-    debugPrint(
-      'NotificationService: Scheduled test in $seconds seconds for "${testWord.word}"',
-    );
-  }
-
-  /// Get debug info about notification status
-  Future<Map<String, dynamic>> getDebugInfo() async {
-    final pending = await getPendingNotifications();
-    final permissions = await checkPermissions();
-
-    return {
-      'permissionsGranted': permissions,
-      'pendingCount': pending.length,
-      'pendingNotifications': pending
-          .take(10)
-          .map(
-            (p) => {
-              'id': p.id,
-              'title': p.title,
-              'body': p.body?.substring(
-                0,
-                (p.body?.length ?? 0) > 50 ? 50 : p.body?.length ?? 0,
-              ),
-            },
-          )
-          .toList(),
-    };
-  }
-
-  /// Cancel all notifications
-  Future<void> cancelAll() async {
-    await _notifications.cancelAll();
-    debugPrint('NotificationService: All notifications cancelled');
   }
 
   /// Get pending notifications
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
     return await _notifications.pendingNotificationRequests();
+  }
+
+  /// Cancel all notifications
+  Future<void> cancelAll() async {
+    await _notifications.cancelAll();
+    await PersistentNotificationChannel.cancelAll();
   }
 }

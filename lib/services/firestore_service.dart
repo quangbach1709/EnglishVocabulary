@@ -263,6 +263,7 @@ class FirestoreService {
         'modelName': 'gemini-1.5-flash',
         'speechRate': 0.5,
         'ttsLanguage': 'en-US',
+        'isPersistentMode': false,
       };
     } catch (e) {
       throw FirestoreException('Failed to fetch user settings: $e');

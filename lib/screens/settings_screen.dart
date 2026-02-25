@@ -24,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _obscureApiKey = true;
   double _speechRate = 0.5;
   String _selectedLanguage = 'en-US';
+  bool _isPersistentMode = false;
 
   // Notification settings
   bool _notificationsEnabled = true;
@@ -59,6 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _speechRate = (settings['speechRate'] ?? 0.5).toDouble();
         _selectedLanguage = settings['ttsLanguage'] ?? 'en-US';
         _notificationsEnabled = settings['notificationsEnabled'] ?? true;
+        _isPersistentMode = settings['isPersistentMode'] ?? false;
 
         // Load notification times
         final savedTimes = settings['notificationTimes'] as List<dynamic>?;
@@ -73,6 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         _isLoading = false;
       });
+// ... (rest of method)
 
       // Sync TTS service with cloud settings
       await TtsService.instance.setSpeechRate(_speechRate);
@@ -546,13 +549,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Switch(
                           value: _notificationsEnabled,
                           onChanged: _toggleNotifications,
-                          activeColor: Colors.green,
+                          activeThumbColor: Colors.green,
                         ),
                       ],
                     ),
                   ),
 
                   if (_notificationsEnabled) ...[
+                    const SizedBox(height: 12),
+
+                    // Hardcore Mode Toggle
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _isPersistentMode
+                            ? Colors.red.shade50
+                            : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _isPersistentMode
+                              ? Colors.red.shade300
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.gavel,
+                            color: _isPersistentMode ? Colors.red : Colors.grey,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Chế độ Kỷ luật (Hardcore Mode)',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                Text(
+                                  'Thông báo sẽ không thể bị xóa cho đến khi bạn học.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: _isPersistentMode,
+                            onChanged: (value) async {
+                              setState(() => _isPersistentMode = value);
+                              await _saveSetting('isPersistentMode', value);
+                              if (_notificationsEnabled) {
+                                await _applyNotificationSchedule();
+                              }
+                            },
+                            activeThumbColor: Colors.red,
+                          ),
+                        ],
+                      ),
+                    ),
+
                     const SizedBox(height: 16),
 
                     // Custom notification times
