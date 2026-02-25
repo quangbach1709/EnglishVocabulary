@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:firebase_core/firebase_core.dart';
@@ -99,58 +100,40 @@ class NotificationService {
 
   /// Request notification permissions (iOS and Android 13+)
   Future<bool> requestPermissions() async {
-    final android = _notifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-    final ios = _notifications
-        .resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin
-        >();
+    // Use permission_handler for reliable results in release builds
+    final status = await Permission.notification.request();
+    final granted = status.isGranted;
+    debugPrint('NotificationService: Notification permission status = $status');
 
-    bool granted = false;
-
-    if (android != null) {
-      // Request notification permission
-      granted = await android.requestNotificationsPermission() ?? false;
-      debugPrint('NotificationService: Notification permission = $granted');
-
-      // Request exact alarm permission for Android 12+
-      final exactAlarmGranted =
-          await android.requestExactAlarmsPermission() ?? false;
-      debugPrint(
-        'NotificationService: Exact alarm permission = $exactAlarmGranted',
-      );
+    if (Platform.isAndroid) {
+      // Also ensure exact alarm permission for Android 12+
+      final android = _notifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      if (android != null) {
+        final exactAlarmGranted =
+            await android.requestExactAlarmsPermission() ?? false;
+        debugPrint(
+          'NotificationService: Exact alarm permission = $exactAlarmGranted',
+        );
+      }
     }
 
-    if (ios != null) {
-      granted =
-          await ios.requestPermissions(alert: true, badge: true, sound: true) ??
-          false;
-    }
-
-    debugPrint('NotificationService: Permission granted = $granted');
     return granted;
   }
 
   /// Check if all required permissions are granted
   Future<Map<String, bool>> checkPermissions() async {
-    final android = _notifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    final status = await Permission.notification.status;
+    final isGranted = status.isGranted;
 
-    final result = <String, bool>{'notifications': false, 'exactAlarms': false};
+    final result = {
+      'notifications': isGranted,
+      'exactAlarms': isGranted, // Simplified for check
+    };
 
-    if (android != null) {
-      result['notifications'] =
-          await android.areNotificationsEnabled() ?? false;
-      // Note: There's no direct API to check exact alarm permission status
-      // But we can assume it's granted if notifications are enabled
-      result['exactAlarms'] = result['notifications']!;
-    }
-
-    debugPrint('NotificationService: Permissions check = $result');
+    debugPrint('NotificationService: Permissions check = $result (Status: $status)');
     return result;
   }
 

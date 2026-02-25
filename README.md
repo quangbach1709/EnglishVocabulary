@@ -28,8 +28,14 @@ A powerful, cloud-synced Flutter application designed to help you master English
     *   **Pronunciation**: Includes both US 🇺🇸 and UK 🇬🇧 IPA transcriptions and audio support.
     *   **Contextual Examples**: Sentences are tied to specific definitions, helping you understand nuance.
 
+### 🔔 Reliable Notification System [NEW]
+*   **Enhanced Stability**: Optimized for **Android 13+** using `permission_handler` to ensure notification permission dialogs always appear correctly in release builds.
+*   **Smart Scheduling**: Automated reminders 5 times per day (Morning, Mid-morning, Noon, Afternoon, Evening).
+*   **Persistent Mode**: High-priority notifications that stay visible until interacted with, ideal for dedicated learners.
+*   **Background Resiliency**: Custom Android receivers ensure notifications are rescheduled even after a device reboot.
+
 ### 🎮 Interactive Notification Games [NEW]
-*   **Active Recall**: Turn passive notifications into active learning moments 3 times a day (Morning, Noon, Evening).
+*   **Active Recall**: Turn passive notifications into active learning moments.
 *   **Game Modes**:
     *   **Multiple Choice 🎯**: Choose the correct meaning from 3 options directly in the notification.
     *   **Direct Input ✍️**: Type the meaning of a word in the notification reply box. Includes a "Show Answer" hint button.
@@ -52,6 +58,7 @@ A powerful, cloud-synced Flutter application designed to help you master English
 *   **Local Settings**: Hive (for API keys & preferences).
 *   **AI**: Google Gemini API.
 *   **Audio**: flutter_tts.
+*   **Permissions**: permission_handler (to ensure reliable notification access).
 
 ## 🚀 Getting Started
 
