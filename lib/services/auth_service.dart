@@ -23,7 +23,18 @@ class AuthService {
   /// Returns the User on success, null on failure/cancellation
   Future<User?> signInWithGoogle() async {
     try {
-      // Trigger the Google Sign-In flow
+      if (kIsWeb) {
+        // On web, use Firebase's built-in popup flow — no google_sign_in needed.
+        final provider = GoogleAuthProvider();
+        provider.addScope('email');
+        provider.addScope('profile');
+        final UserCredential userCredential =
+            await _firebaseAuth.signInWithPopup(provider);
+        debugPrint('Signed in as: ${userCredential.user?.displayName}');
+        return userCredential.user;
+      }
+
+      // Mobile: use google_sign_in package
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -43,8 +54,8 @@ class AuthService {
       );
 
       // Sign in to Firebase with the Google credential
-      final UserCredential userCredential = await _firebaseAuth
-          .signInWithCredential(credential);
+      final UserCredential userCredential =
+          await _firebaseAuth.signInWithCredential(credential);
 
       debugPrint('Signed in as: ${userCredential.user?.displayName}');
       return userCredential.user;
@@ -60,7 +71,9 @@ class AuthService {
   /// Sign out from both Google and Firebase
   Future<void> signOut() async {
     try {
-      await _googleSignIn.signOut();
+      if (!kIsWeb) {
+        await _googleSignIn.signOut();
+      }
       await _firebaseAuth.signOut();
       debugPrint('User signed out');
     } catch (e) {

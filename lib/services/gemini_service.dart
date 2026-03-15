@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -75,23 +76,32 @@ JSON Schema:
   }
 
   GenerativeModel get _model {
-    final settingsBox = Hive.box('settings');
-    final apiKey = settingsBox.get('apiKey', defaultValue: '') as String;
-    final modelName =
-        settingsBox.get('modelName', defaultValue: 'gemini-1.5-flash')
-            as String;
+    String apiKey = '';
+    String modelName = 'gemini-1.5-flash';
 
-    // Fallback to .env if Hive key is empty
-    String? effectiveApiKey = apiKey;
-    if (effectiveApiKey.isEmpty) {
+    if (!kIsWeb) {
+      // On mobile, read from Hive (synced from Firestore via SettingsScreen)
+      final settingsBox = Hive.box('settings');
+      apiKey = settingsBox.get('apiKey', defaultValue: '') as String;
+      modelName =
+          settingsBox.get('modelName', defaultValue: 'gemini-1.5-flash')
+              as String;
+    } else {
+      // On web, Hive is not initialised — use in-memory cache set by SettingsScreen
+      apiKey = _webApiKey;
+      modelName = _webModelName;
+    }
+
+    // Fallback to .env if key is empty
+    if (apiKey.isEmpty) {
       try {
-        effectiveApiKey = dotenv.env['API_KEY'];
+        apiKey = dotenv.env['API_KEY'] ?? '';
       } catch (_) {
         // dotenv not initialized, ignore
       }
     }
 
-    if (effectiveApiKey == null || effectiveApiKey.isEmpty) {
+    if (apiKey.isEmpty) {
       throw Exception(
         'API Key not found. Please configure it in Settings or .env file.',
       );
@@ -99,9 +109,24 @@ JSON Schema:
 
     return GenerativeModel(
       model: modelName.isNotEmpty ? modelName : 'gemini-1.5-flash',
-      apiKey: effectiveApiKey,
+      apiKey: apiKey,
       generationConfig: GenerationConfig(responseMimeType: 'application/json'),
     );
+  }
+
+  // In-memory settings used on web (populated by SettingsScreen)
+  static String _webApiKey = '';
+  static String _webModelName = 'gemini-1.5-flash';
+
+  /// Current in-memory API key (web only)
+  static String get webApiKey => _webApiKey;
+
+  /// Update in-memory API settings (used on web where Hive is unavailable)
+  static void setWebSettings({required String apiKey, String? modelName}) {
+    _webApiKey = apiKey;
+    if (modelName != null && modelName.isNotEmpty) {
+      _webModelName = modelName;
+    }
   }
 
   GeminiService();

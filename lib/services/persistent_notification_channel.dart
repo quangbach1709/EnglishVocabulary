@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/services.dart';
 
 /// Platform channel để gọi native Android code tạo persistent notifications.
@@ -7,6 +7,9 @@ class PersistentNotificationChannel {
   static const _channel = MethodChannel(
     'com.example.english/persistent_notification',
   );
+
+  static bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   /// Lên lịch alarm native hiển thị persistent notification vào đúng thời điểm.
   /// [timeMs] là Unix timestamp (milliseconds) của thời điểm muốn hiển thị.
@@ -17,7 +20,7 @@ class PersistentNotificationChannel {
     required String body,
     required String payload,
   }) async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     await _channel.invokeMethod('scheduleAlarm', {
       'id': id,
       'timeMs': timeMs,
@@ -29,13 +32,13 @@ class PersistentNotificationChannel {
 
   /// Hủy alarm và xóa notification đang hiển thị.
   static Future<void> cancelAlarm(int id) async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     await _channel.invokeMethod('cancelAlarm', {'id': id});
   }
 
   /// Hủy tất cả persistent alarms/notifications.
   static Future<void> cancelAll() async {
-    if (!Platform.isAndroid) return;
+    if (!_isAndroid) return;
     await _channel.invokeMethod('cancelAll');
   }
 }

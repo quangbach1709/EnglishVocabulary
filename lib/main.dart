@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -27,9 +28,11 @@ void main() async {
   // Initialize Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Initialize Hive for Settings
-  await Hive.initFlutter();
-  await Hive.openBox('settings');
+  // Initialize Hive for Settings (not needed on web)
+  if (!kIsWeb) {
+    await Hive.initFlutter();
+    await Hive.openBox('settings');
+  }
 
   // Initialize TTS Service (loads saved settings)
   await TtsService.instance.init();
@@ -130,8 +133,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         // User is logged in
         if (snapshot.hasData && snapshot.data != null) {
-          // Initialize notifications after frame is rendered
-          if (!_notificationsInitialized) {
+          // Initialize notifications after frame is rendered (mobile only)
+          if (!kIsWeb && !_notificationsInitialized) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _initializeNotifications();
             });

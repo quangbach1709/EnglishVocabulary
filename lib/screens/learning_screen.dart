@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import '../models/word.dart';
 import '../providers/word_provider.dart';
+import '../services/tts_service.dart';
 
 class LearningScreen extends StatefulWidget {
   final Word? word; // For single word learning
@@ -16,7 +16,6 @@ class LearningScreen extends StatefulWidget {
 
 class _LearningScreenState extends State<LearningScreen> {
   final TextEditingController _controller = TextEditingController();
-  final FlutterTts flutterTts = FlutterTts();
 
   late List<Word> _sessionWords;
   int _currentIndex = 0;
@@ -29,7 +28,6 @@ class _LearningScreenState extends State<LearningScreen> {
   void initState() {
     super.initState();
     _initData();
-    _initTts();
   }
 
   void _initData() {
@@ -43,14 +41,10 @@ class _LearningScreenState extends State<LearningScreen> {
     }
   }
 
-  Future<void> _initTts() async {
-    await flutterTts.setLanguage("en-US");
-  }
-
   Word get currentWord => _sessionWords[_currentIndex];
 
   Future<void> _speak() async {
-    await flutterTts.speak(currentWord.word);
+    await TtsService.instance.speak(currentWord.word);
   }
 
   void _checkAnswer() {
@@ -156,7 +150,7 @@ class _LearningScreenState extends State<LearningScreen> {
   @override
   void dispose() {
     _controller.dispose();
-    flutterTts.stop();
+    TtsService.instance.stop();
     super.dispose();
   }
 

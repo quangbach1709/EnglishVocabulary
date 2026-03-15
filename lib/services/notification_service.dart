@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -63,6 +63,9 @@ class NotificationService {
 
   /// Initialize the notification service
   Future<void> initialize() async {
+    // Notifications are not supported on web
+    if (kIsWeb) return;
+
     // Initialize timezone data
     tz_data.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
@@ -100,12 +103,14 @@ class NotificationService {
 
   /// Request notification permissions (iOS and Android 13+)
   Future<bool> requestPermissions() async {
+    if (kIsWeb) return false;
+
     // Use permission_handler for reliable results in release builds
     final status = await Permission.notification.request();
     final granted = status.isGranted;
     debugPrint('NotificationService: Notification permission status = $status');
 
-    if (Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       // Also ensure exact alarm permission for Android 12+
       final android = _notifications
           .resolvePlatformSpecificImplementation<
@@ -125,6 +130,8 @@ class NotificationService {
 
   /// Check if all required permissions are granted
   Future<Map<String, bool>> checkPermissions() async {
+    if (kIsWeb) return {'notifications': false, 'exactAlarms': false};
+
     final status = await Permission.notification.status;
     final isGranted = status.isGranted;
 
@@ -263,6 +270,7 @@ class NotificationService {
 
   /// Schedule notifications for TODAY and the next 7 days
   Future<void> scheduleNext7Days() async {
+    if (kIsWeb) return;
     await _notifications.cancelAll();
     await PersistentNotificationChannel.cancelAll();
     debugPrint('NotificationService: Cancelled all existing notifications');
@@ -350,6 +358,7 @@ class NotificationService {
   Future<void> scheduleWithCustomTimes(
     List<Map<String, int>> customSchedules,
   ) async {
+    if (kIsWeb) return;
     await _notifications.cancelAll();
     await PersistentNotificationChannel.cancelAll();
     debugPrint('NotificationService: Cancelled all existing notifications');
@@ -423,7 +432,7 @@ class NotificationService {
 
     // Trên Android với persistent mode: dùng native alarm + setDeleteIntent
     // để notification tự re-show khi bị dismiss (Android 14+ không ngăn swipe nữa).
-    if (isPersistentMode && Platform.isAndroid) {
+    if (isPersistentMode && !kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await PersistentNotificationChannel.scheduleAlarm(
         id: id,
         timeMs: scheduledDate.millisecondsSinceEpoch,
@@ -497,6 +506,7 @@ class NotificationService {
 
   /// Show an immediate test notification
   Future<void> showTestNotification() async {
+    if (kIsWeb) return;
     List<Word> words = [];
     bool isPersistentMode = false;
     try {
@@ -528,11 +538,13 @@ class NotificationService {
 
   /// Get pending notifications
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
+    if (kIsWeb) return [];
     return await _notifications.pendingNotificationRequests();
   }
 
   /// Cancel all notifications
   Future<void> cancelAll() async {
+    if (kIsWeb) return;
     await _notifications.cancelAll();
     await PersistentNotificationChannel.cancelAll();
   }

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flip_card/flip_card.dart';
 import 'package:provider/provider.dart';
 import '../models/word.dart';
 import '../providers/word_provider.dart';
+import '../services/tts_service.dart';
 
 class FlashcardScreen extends StatefulWidget {
   final List<Word> words;
@@ -17,7 +17,6 @@ class FlashcardScreen extends StatefulWidget {
 class _FlashcardScreenState extends State<FlashcardScreen> {
   late List<Word> _reviewWords;
   int _currentIndex = 0;
-  final FlutterTts flutterTts = FlutterTts();
   GlobalKey<FlipCardState> cardKey = GlobalKey<FlipCardState>();
   bool _isCardFlipped = false;
 
@@ -25,15 +24,10 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
   void initState() {
     super.initState();
     _reviewWords = List.from(widget.words)..shuffle();
-    _initTts();
-  }
-
-  Future<void> _initTts() async {
-    await flutterTts.setLanguage("en-US");
   }
 
   Future<void> _speak() async {
-    await flutterTts.speak(_reviewWords[_currentIndex].word);
+    await TtsService.instance.speak(_reviewWords[_currentIndex].word);
   }
 
   Word get currentWord => _reviewWords[_currentIndex];
@@ -91,7 +85,7 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
 
   @override
   void dispose() {
-    flutterTts.stop();
+    TtsService.instance.stop();
     super.dispose();
   }
 

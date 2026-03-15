@@ -1,9 +1,9 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import '../models/word.dart';
 import '../providers/word_provider.dart';
+import '../services/tts_service.dart';
 
 class GameScreen extends StatefulWidget {
   final List<Word> words;
@@ -21,18 +21,12 @@ class _GameScreenState extends State<GameScreen> {
   bool? _isCorrect;
   bool _showDetails = false;
   bool _firstAttempt = true;
-  final FlutterTts flutterTts = FlutterTts();
   final Random _random = Random();
 
   @override
   void initState() {
     super.initState();
-    _initTts();
     _nextQuestion();
-  }
-
-  Future<void> _initTts() async {
-    await flutterTts.setLanguage("en-US");
   }
 
   void _nextQuestion() {
@@ -119,12 +113,12 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Future<void> _speak() async {
-    await flutterTts.speak(_targetWord.word);
+    await TtsService.instance.speak(_targetWord.word);
   }
 
   @override
   void dispose() {
-    flutterTts.stop();
+    TtsService.instance.stop();
     super.dispose();
   }
 

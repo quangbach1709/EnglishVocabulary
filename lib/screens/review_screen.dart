@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import '../models/word.dart';
+import '../services/tts_service.dart';
 
 class ReviewScreen extends StatefulWidget {
   final List<Word> words;
@@ -15,7 +15,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
   late List<Word> _reviewList;
   int _currentIndex = 0;
   final TextEditingController _controller = TextEditingController();
-  final FlutterTts flutterTts = FlutterTts();
   bool? _isCorrect;
   bool _showDetails = false;
 
@@ -23,15 +22,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void initState() {
     super.initState();
     _reviewList = List.from(widget.words)..shuffle(); // Randomize order
-    _initTts();
-  }
-
-  Future<void> _initTts() async {
-    await flutterTts.setLanguage("en-US");
   }
 
   Future<void> _speak() async {
-    await flutterTts.speak(_reviewList[_currentIndex].word);
+    await TtsService.instance.speak(_reviewList[_currentIndex].word);
   }
 
   void _checkAnswer() {
@@ -84,7 +78,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   @override
   void dispose() {
     _controller.dispose();
-    flutterTts.stop();
+    TtsService.instance.stop();
     super.dispose();
   }
 

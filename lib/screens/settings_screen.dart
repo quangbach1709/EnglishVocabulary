@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../services/tts_service.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../services/gemini_service.dart';
 import '../services/notification_service.dart';
 import 'login_screen.dart';
 
@@ -81,13 +83,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await TtsService.instance.setSpeechRate(_speechRate);
       await TtsService.instance.setLanguage(_selectedLanguage);
 
-      // Sync API settings from Firestore to Hive for GeminiService
-      final settingsBox = Hive.box('settings');
-      if (_apiKeyController.text.isNotEmpty) {
-        await settingsBox.put('apiKey', _apiKeyController.text);
-      }
-      if (_modelController.text.isNotEmpty) {
-        await settingsBox.put('modelName', _modelController.text);
+      // Sync API settings from Firestore to Hive (mobile) / memory (web)
+      if (!kIsWeb) {
+        final settingsBox = Hive.box('settings');
+        if (_apiKeyController.text.isNotEmpty) {
+          await settingsBox.put('apiKey', _apiKeyController.text);
+        }
+        if (_modelController.text.isNotEmpty) {
+          await settingsBox.put('modelName', _modelController.text);
+        }
+      } else {
+        GeminiService.setWebSettings(
+          apiKey: _apiKeyController.text,
+          modelName: _modelController.text,
+        );
       }
     } catch (e) {
       setState(() => _isLoading = false);
@@ -105,11 +114,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Save to Firestore (cloud)
       await _firestoreService.updateSetting(key, value);
 
-      // Also sync apiKey and modelName to Hive for GeminiService
-      // GeminiService reads from Hive, not Firestore
+      // Also sync apiKey and modelName to Hive (mobile) / memory (web)
       if (key == 'apiKey' || key == 'modelName') {
-        final settingsBox = Hive.box('settings');
-        await settingsBox.put(key, value);
+        if (!kIsWeb) {
+          final settingsBox = Hive.box('settings');
+          await settingsBox.put(key, value);
+        } else {
+          GeminiService.setWebSettings(
+            apiKey: key == 'apiKey'
+                ? value as String
+                : GeminiService.webApiKey,
+            modelName: key == 'modelName' ? value as String : null,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -492,8 +509,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Divider(height: 32),
 
                   // ==========================================
-                  // Section C: Notifications
+                  // Section C: Notifications (mobile only)
                   // ==========================================
+                  if (!kIsWeb) ...[
                   _buildSectionHeader(
                     'Thông báo ôn tập',
                     Icons.notifications_active,
@@ -752,6 +770,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ],
+                  ], // end if (!kIsWeb)
 
                   const Divider(height: 32),
 
