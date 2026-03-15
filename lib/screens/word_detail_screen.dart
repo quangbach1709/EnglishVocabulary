@@ -817,50 +817,110 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.assessment, color: Colors.grey.shade600),
-          const SizedBox(width: 12),
-          const Text(
-            'Trạng thái:',
-            style: TextStyle(fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: statusColors[_word.status.clamp(0, 3)].withOpacity(0.2),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: statusColors[_word.status.clamp(0, 3)]),
-            ),
-            child: Text(
-              statusLabels[_word.status.clamp(0, 3)],
-              style: TextStyle(
-                color: statusColors[_word.status.clamp(0, 3)],
-                fontWeight: FontWeight.bold,
+          Row(
+            children: [
+              Icon(Icons.assessment, color: Colors.grey.shade600),
+              const SizedBox(width: 12),
+              const Text(
+                'Trạng thái học tập:',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-            ),
-          ),
-          const Spacer(),
-          if (_word.group != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.folder, size: 16, color: Colors.blue.shade700),
-                  const SizedBox(width: 4),
-                  Text(
-                    _word.group!,
-                    style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+              const Spacer(),
+              if (_word.group != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
-              ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.folder, size: 16, color: Colors.blue.shade700),
+                      const SizedBox(width: 4),
+                      Text(
+                        _word.group!,
+                        style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(4, (index) {
+              final isSelected = _word.status == index;
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _word = _word.copyWith(status: index);
+                    _hasChanges = true;
+                  });
+                },
+                child: Column(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? statusColors[index]
+                            : statusColors[index].withOpacity(0.1),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: statusColors[index],
+                          width: isSelected ? 3 : 1,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: statusColors[index].withOpacity(0.4),
+                                  blurRadius: 8,
+                                  spreadRadius: 1,
+                                )
+                              ]
+                            : null,
+                      ),
+                      child: Icon(
+                        isSelected ? Icons.check : Icons.circle,
+                        color: isSelected ? Colors.white : statusColors[index],
+                        size: isSelected ? 30 : 15,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      statusLabels[index],
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? statusColors[index] : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+          if (_word.nextReviewDate != null) ...[
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.event, size: 16, color: Colors.grey.shade600),
+                const SizedBox(width: 8),
+                Text(
+                  'Lần ôn tập tới: ${_word.nextReviewDate!.day}/${_word.nextReviewDate!.month}/${_word.nextReviewDate!.year}',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                ),
+              ],
             ),
+          ],
         ],
       ),
     );

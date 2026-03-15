@@ -56,6 +56,152 @@ class WordProvider with ChangeNotifier {
     }
   }
 
+  /// Adds words in bulk from a formatted text string
+  Future<void> addWordsBulk(String bulkText) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final List<Word> parsedWords = _parseBulkText(bulkText);
+      if (parsedWords.isEmpty) {
+        throw Exception('Không tìm thấy từ nào để thêm. Hãy kiểm tra định dạng.\nĐịnh dạng đúng: Từ [Loại từ] /Phát âm/ Nghĩa');
+      }
+      
+      await _repository.addWords(parsedWords);
+      await loadWords();
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Parses bulk text with flexible formats:
+  /// 1. Word POS /IPA/ Meaning  (all on one line, space-separated)
+  /// 2. Word \n POS \n /IPA/ Meaning  (multi-line per entry)
+  ///
+  /// Strategy: locate every entry boundary by finding positions where an
+  /// ASCII-only English word is immediately followed by a POS tag and then
+  /// a /IPA/ block.  We split the raw text at those boundaries so that the
+  /// "meaning" of entry N can contain arbitrary Unicode (Vietnamese) without
+  /// leaking into entry N+1.
+  List<Word> _parseBulkText(String text) {
+    final List<Word> words = [];
+
+    // Normalize line-endings
+    final normalizedText = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+    // Regex that matches the *start* of an entry:
+    //   ^EnglishWord  POS  /ipa/
+    // We use this only to find the split positions; the meaning is
+    // everything between two such boundaries.
+    final entryStart = RegExp(
+      r'(?:^|(?<=\s))([a-zA-Z][a-zA-Z0-9\s\-]*?)\s+'
+      r'((?:(?:n|v|adj|adv|prep)\.?,?\s*)+)'
+      r'(/[^/]+/(?:\s*or\s*/[^/]+/)*)',
+      caseSensitive: false,
+    );
+
+    final allMatches = entryStart.allMatches(normalizedText).toList();
+
+    for (int i = 0; i < allMatches.length; i++) {
+      final m = allMatches[i];
+
+      final wordRaw  = m.group(1)!.trim();
+      final posStr   = m.group(2)!.trim();
+      final ipa      = m.group(3)!.trim();
+
+      // The meaning is everything after the IPA block up to the start of the
+      // next entry (or end of string).  Because we slice by index there is no
+      // chance of a trailing character leaking into the next word.
+      final meaningStart = m.end;
+      final meaningEnd   = (i + 1 < allMatches.length)
+          ? allMatches[i + 1].start
+          : normalizedText.length;
+
+      final meaning = normalizedText
+          .substring(meaningStart, meaningEnd)
+          .trim();
+
+      if (wordRaw.isNotEmpty && ipa.isNotEmpty) {
+        words.add(Word(
+          word: wordRaw,
+          pos: _parsePos(posStr),
+          ipa: ipa,
+          meaningVi: meaning,
+          status: 0,
+          nextReviewDate: DateTime.now(),
+        ));
+      }
+    }
+
+    // Fallback: line-by-line for very simple single-line formats
+    if (words.isEmpty) {
+      final lines = normalizedText
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+
+      for (var line in lines) {
+        // Find the first /IPA/ block on this line
+        final ipaMatch = RegExp(r'(/[^/]+/)').firstMatch(line);
+        if (ipaMatch == null) continue;
+
+        final ipa      = ipaMatch.group(1)!;
+        final ipaIndex = line.indexOf(ipa);
+
+        final beforeIpa = line.substring(0, ipaIndex).trim();
+        final afterIpa  = line.substring(ipaIndex + ipa.length).trim();
+
+        String wordPart = beforeIpa;
+        String posPart  = '';
+
+        final posRegex = RegExp(
+          r'(.*?)\s+((?:n\.|v\.|adj\.|adv\.|prep\.)+)$',
+          caseSensitive: false,
+        );
+        final pMatch = posRegex.firstMatch(beforeIpa);
+        if (pMatch != null) {
+          wordPart = pMatch.group(1)!.trim();
+          posPart  = pMatch.group(2)!.trim();
+        }
+
+        if (wordPart.isNotEmpty) {
+          words.add(Word(
+            word: wordPart,
+            pos: _parsePos(posPart),
+            ipa: ipa,
+            meaningVi: afterIpa,
+            status: 0,
+            nextReviewDate: DateTime.now(),
+          ));
+        }
+      }
+    }
+
+    return words;
+  }
+
+  /// Helper to parse POS string into a list of normalized POS names
+  List<String> _parsePos(String posStr) {
+    final List<String> posList = [];
+    final cleanPos = posStr.replaceAll(',', ' ').replaceAll('.', ' ').toLowerCase();
+    final parts = cleanPos.split(' ').map((p) => p.trim()).where((p) => p.isNotEmpty);
+    
+    for (var p in parts) {
+      if (p == 'n') posList.add('noun');
+      else if (p == 'v') posList.add('verb');
+      else if (p == 'adj') posList.add('adjective');
+      else if (p == 'adv') posList.add('adverb');
+      else if (p == 'prep') posList.add('preposition');
+      else if (p.length > 1) posList.add(p); // Add other POS if it's a word
+    }
+    return posList.toSet().toList();
+  }
+
   /// Updates a word in Firestore
   Future<void> updateWord(Word updatedWord) async {
     try {
@@ -134,14 +280,26 @@ class WordProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Deletes all selected words
+  /// Deletes all selected words using batch operation
   Future<void> deleteSelectedWords() async {
-    for (var word in _selectedWords) {
-      await _repository.deleteWord(word.english);
+    if (_selectedWords.isEmpty) return;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final List<String> wordIds = _selectedWords.map((w) => w.english).toList();
+      await _repository.deleteWords(wordIds);
+      
+      _selectedWords.clear();
+      _isSelectionMode = false;
+      await loadWords();
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-    _selectedWords.clear();
-    _isSelectionMode = false;
-    await loadWords();
   }
 
   // ============================================
@@ -305,12 +463,15 @@ class WordProvider with ChangeNotifier {
   }
 
   /// Returns words that are due for review (nextReviewDate <= now or null)
+  /// Skips words that are already mastered (status >= 3)
   List<Word> getWordsForReview() {
     final now = DateTime.now();
     return _words.where((word) {
-      return word.nextReviewDate == null ||
+      final isDue = word.nextReviewDate == null ||
           word.nextReviewDate!.isBefore(now) ||
           word.nextReviewDate!.isAtSameMomentAs(now);
+      final isNotMastered = (word.status ?? 0) < 3;
+      return isDue && isNotMastered;
     }).toList();
   }
 

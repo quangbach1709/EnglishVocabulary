@@ -189,6 +189,19 @@ class FirestoreService {
     }
   }
 
+  /// Batch delete multiple words
+  Future<void> deleteWords(List<String> englishWords) async {
+    try {
+      final batch = _firestore.batch();
+      for (final englishWord in englishWords) {
+        batch.delete(_vocabularyCollection.doc(englishWord.toLowerCase()));
+      }
+      await batch.commit();
+    } catch (e) {
+      throw FirestoreException('Failed to delete words: $e');
+    }
+  }
+
   /// Deletes all words in the collection
   Future<void> deleteAllWords() async {
     try {

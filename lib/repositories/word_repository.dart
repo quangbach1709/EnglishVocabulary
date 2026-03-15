@@ -20,6 +20,11 @@ class WordRepository {
     await _firestoreService.deleteWord(englishWord);
   }
 
+  /// Deletes multiple words by their English texts
+  Future<void> deleteWords(List<String> englishWords) async {
+    await _firestoreService.deleteWords(englishWords);
+  }
+
   /// Updates a word in Firestore
   Future<void> updateWord(Word word) async {
     await _firestoreService.updateWord(word);

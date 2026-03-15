@@ -644,22 +644,22 @@ class HomeScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Selected?'),
+        title: const Text('Xóa các từ đã chọn?'),
         content: Text(
-          'Are you sure you want to delete ${provider.selectedWords.length} words?',
+          'Bạn có chắc muốn xóa ${provider.selectedWords.length} từ đã chọn?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: const Text('Hủy'),
           ),
           TextButton(
-            onPressed: () {
-              provider.deleteSelectedWords();
-              Navigator.pop(context);
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog first
+              await provider.deleteSelectedWords();
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: const Text('Xóa'),
           ),
         ],
       ),
