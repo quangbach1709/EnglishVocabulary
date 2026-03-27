@@ -5,10 +5,18 @@ import '../models/word.dart';
 import '../providers/word_provider.dart';
 import '../services/tts_service.dart';
 
+/// Flashcard study mode
+enum FlashcardMode { meaning, synonym, antonym }
+
 class FlashcardScreen extends StatefulWidget {
   final List<Word> words;
+  final FlashcardMode initialMode;
 
-  const FlashcardScreen({super.key, required this.words});
+  const FlashcardScreen({
+    super.key,
+    required this.words,
+    this.initialMode = FlashcardMode.meaning,
+  });
 
   @override
   State<FlashcardScreen> createState() => _FlashcardScreenState();
@@ -16,6 +24,7 @@ class FlashcardScreen extends StatefulWidget {
 
 class _FlashcardScreenState extends State<FlashcardScreen> {
   late List<Word> _reviewWords;
+  late FlashcardMode _currentMode;
   int _currentIndex = 0;
   GlobalKey<FlipCardState> cardKey = GlobalKey<FlipCardState>();
   bool _isCardFlipped = false;
@@ -23,7 +32,77 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
   @override
   void initState() {
     super.initState();
-    _reviewWords = List.from(widget.words)..shuffle();
+    _currentMode = widget.initialMode;
+    _filterAndShuffleWords();
+  }
+
+  /// Filters words based on the current mode and shuffles them
+  void _filterAndShuffleWords() {
+    List<Word> filtered;
+    switch (_currentMode) {
+      case FlashcardMode.meaning:
+        // All words are valid for meaning mode
+        filtered = List.from(widget.words);
+        break;
+      case FlashcardMode.synonym:
+        // Only words with non-empty synonyms
+        filtered = widget.words
+            .where((w) => w.synonym != null && w.synonym!.isNotEmpty)
+            .toList();
+        break;
+      case FlashcardMode.antonym:
+        // Only words with non-empty antonyms
+        filtered = widget.words
+            .where((w) => w.antonym != null && w.antonym!.isNotEmpty)
+            .toList();
+        break;
+    }
+    _reviewWords = filtered..shuffle();
+    _currentIndex = 0;
+    _isCardFlipped = false;
+    cardKey = GlobalKey<FlipCardState>();
+  }
+
+  /// Changes the flashcard mode and re-filters the word list
+  void _changeMode(FlashcardMode newMode) {
+    if (newMode != _currentMode) {
+      setState(() {
+        _currentMode = newMode;
+        _filterAndShuffleWords();
+      });
+    }
+  }
+
+  /// Gets the back card content based on the current mode
+  String _getBackContent(Word word) {
+    switch (_currentMode) {
+      case FlashcardMode.meaning:
+        return word.primaryShortMeaning;
+      case FlashcardMode.synonym:
+        final synonym = word.synonym ?? '';
+        final synonymMeaning = word.synonymMeaningVi ?? '';
+        return synonymMeaning.isNotEmpty 
+            ? '$synonym\n($synonymMeaning)'
+            : synonym;
+      case FlashcardMode.antonym:
+        final antonym = word.antonym ?? '';
+        final antonymMeaning = word.antonymMeaningVi ?? '';
+        return antonymMeaning.isNotEmpty 
+            ? '$antonym\n($antonymMeaning)'
+            : antonym;
+    }
+  }
+
+  /// Gets the mode label for display
+  String _getModeLabel(FlashcardMode mode) {
+    switch (mode) {
+      case FlashcardMode.meaning:
+        return 'Nghĩa';
+      case FlashcardMode.synonym:
+        return 'Đồng nghĩa';
+      case FlashcardMode.antonym:
+        return 'Trái nghĩa';
+    }
   }
 
   Future<void> _speak() async {
@@ -94,7 +173,30 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
     if (_reviewWords.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Flashcard Review')),
-        body: const Center(child: Text('No words to review!')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                _currentMode == FlashcardMode.synonym 
+                    ? Icons.compare_arrows 
+                    : _currentMode == FlashcardMode.antonym 
+                        ? Icons.swap_horiz 
+                        : Icons.translate,
+                size: 64,
+                color: Colors.grey,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _getEmptyMessage(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 24),
+              _buildModeSelector(),
+            ],
+          ),
+        ),
       );
     }
 
@@ -113,11 +215,15 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            // Mode selector
+            _buildModeSelector(),
+            const SizedBox(height: 12),
+            
             // Progress indicator
             LinearProgressIndicator(
               value: (_currentIndex + 1) / _reviewWords.length,
               backgroundColor: Colors.grey[300],
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+              valueColor: AlwaysStoppedAnimation<Color>(_getModeColor()),
             ),
             const SizedBox(height: 20),
 
@@ -156,6 +262,54 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
     );
   }
 
+  String _getEmptyMessage() {
+    switch (_currentMode) {
+      case FlashcardMode.meaning:
+        return 'No words to review!';
+      case FlashcardMode.synonym:
+        return 'Không có từ nào có đồng nghĩa.\nHãy thêm cặp từ đồng nghĩa trong mục "Thêm hàng loạt".';
+      case FlashcardMode.antonym:
+        return 'Không có từ nào có trái nghĩa.\nHãy thêm cặp từ trái nghĩa trong mục "Thêm hàng loạt".';
+    }
+  }
+
+  Color _getModeColor() {
+    switch (_currentMode) {
+      case FlashcardMode.meaning:
+        return Colors.blue;
+      case FlashcardMode.synonym:
+        return Colors.purple;
+      case FlashcardMode.antonym:
+        return Colors.orange;
+    }
+  }
+
+  Widget _buildModeSelector() {
+    return SegmentedButton<FlashcardMode>(
+      segments: [
+        ButtonSegment(
+          value: FlashcardMode.meaning,
+          label: Text(_getModeLabel(FlashcardMode.meaning)),
+          icon: const Icon(Icons.translate, size: 18),
+        ),
+        ButtonSegment(
+          value: FlashcardMode.synonym,
+          label: Text(_getModeLabel(FlashcardMode.synonym)),
+          icon: const Icon(Icons.compare_arrows, size: 18),
+        ),
+        ButtonSegment(
+          value: FlashcardMode.antonym,
+          label: Text(_getModeLabel(FlashcardMode.antonym)),
+          icon: const Icon(Icons.swap_horiz, size: 18),
+        ),
+      ],
+      selected: {_currentMode},
+      onSelectionChanged: (Set<FlashcardMode> newSelection) {
+        _changeMode(newSelection.first);
+      },
+    );
+  }
+
   Widget _buildCardFront() {
     return Card(
       elevation: 8,
@@ -164,10 +318,10 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
         width: double.infinity,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Colors.blue, Colors.blueAccent],
+            colors: _getFrontGradientColors(),
           ),
         ),
         child: Padding(
@@ -175,7 +329,7 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.translate, size: 48, color: Colors.white70),
+              Icon(_getFrontIcon(), size: 48, color: Colors.white70),
               const SizedBox(height: 20),
               Text(
                 currentWord.word,
@@ -187,15 +341,28 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
-              Text(
-                currentWord.ipa,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontStyle: FontStyle.italic,
-                  color: Colors.white70,
+              // Show meaning hint in synonym/antonym mode
+              if (_currentMode != FlashcardMode.meaning &&
+                  currentWord.meaningVi.isNotEmpty)
+                Text(
+                  '(${currentWord.meaningVi})',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
+              if (_currentMode == FlashcardMode.meaning &&
+                  currentWord.ipa.isNotEmpty)
+                Text(
+                  currentWord.ipa,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.white70,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               const SizedBox(height: 24),
               IconButton(
                 icon: const Icon(
@@ -212,7 +379,32 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
     );
   }
 
+  List<Color> _getFrontGradientColors() {
+    switch (_currentMode) {
+      case FlashcardMode.meaning:
+        return [Colors.blue, Colors.blueAccent];
+      case FlashcardMode.synonym:
+        return [Colors.purple, Colors.purpleAccent];
+      case FlashcardMode.antonym:
+        return [Colors.orange, Colors.deepOrange];
+    }
+  }
+
+  IconData _getFrontIcon() {
+    switch (_currentMode) {
+      case FlashcardMode.meaning:
+        return Icons.translate;
+      case FlashcardMode.synonym:
+        return Icons.compare_arrows;
+      case FlashcardMode.antonym:
+        return Icons.swap_horiz;
+    }
+  }
+
   Widget _buildCardBack() {
+    final backContent = _getBackContent(currentWord);
+    final showExamples = _currentMode == FlashcardMode.meaning;
+    
     return Card(
       elevation: 8,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -220,10 +412,10 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
         width: double.infinity,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Colors.green, Colors.teal],
+            colors: _getBackGradientColors(),
           ),
         ),
         child: Padding(
@@ -232,14 +424,14 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.lightbulb_outline,
+                Icon(
+                  _getBackIcon(),
                   size: 40,
                   color: Colors.white70,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  currentWord.primaryShortMeaning,
+                  backContent,
                   style: const TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
@@ -248,7 +440,8 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                if (currentWord.examplesEn.isNotEmpty) ...[
+                // Show examples only in meaning mode
+                if (showExamples && currentWord.examplesEn.isNotEmpty) ...[
                   const Divider(color: Colors.white38),
                   const SizedBox(height: 10),
                   const Text(
@@ -288,6 +481,28 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
         ),
       ),
     );
+  }
+
+  List<Color> _getBackGradientColors() {
+    switch (_currentMode) {
+      case FlashcardMode.meaning:
+        return [Colors.green, Colors.teal];
+      case FlashcardMode.synonym:
+        return [Colors.deepPurple, Colors.purple];
+      case FlashcardMode.antonym:
+        return [Colors.red, Colors.deepOrange];
+    }
+  }
+
+  IconData _getBackIcon() {
+    switch (_currentMode) {
+      case FlashcardMode.meaning:
+        return Icons.lightbulb_outline;
+      case FlashcardMode.synonym:
+        return Icons.check_circle_outline;
+      case FlashcardMode.antonym:
+        return Icons.swap_horizontal_circle_outlined;
+    }
   }
 
   Widget _buildRatingButtons() {

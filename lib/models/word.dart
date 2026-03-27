@@ -148,6 +148,12 @@ class Word {
 
   String? group;
 
+  // Synonym/Antonym fields for Word Pair flashcards
+  final String? synonym; // e.g., "Bare" for word "Empty"
+  final String? synonymMeaningVi; // e.g., "trống trơn"
+  final String? antonym; // e.g., "Full" for word "Empty"
+  final String? antonymMeaningVi; // e.g., "đầy"
+
   // SRS (Spaced Repetition System) Fields
   DateTime? nextReviewDate;
   int interval;
@@ -166,6 +172,10 @@ class Word {
     this.examplesEn = const [],
     this.examplesVi = const [],
     this.group,
+    this.synonym,
+    this.synonymMeaningVi,
+    this.antonym,
+    this.antonymMeaningVi,
     this.nextReviewDate,
     this.interval = 0,
     this.easeFactor = 2.5,
@@ -262,6 +272,10 @@ class Word {
       'examples_en': examplesEn,
       'examples_vi': examplesVi,
       'group': group,
+      'synonym': synonym,
+      'synonym_meaning_vi': synonymMeaningVi,
+      'antonym': antonym,
+      'antonym_meaning_vi': antonymMeaningVi,
       'next_review_date': nextReviewDate != null
           ? Timestamp.fromDate(nextReviewDate!)
           : null,
@@ -306,6 +320,10 @@ class Word {
               .toList() ??
           [],
       group: map['group'],
+      synonym: map['synonym'],
+      synonymMeaningVi: map['synonym_meaning_vi'],
+      antonym: map['antonym'],
+      antonymMeaningVi: map['antonym_meaning_vi'],
       nextReviewDate: map['next_review_date'] != null
           ? (map['next_review_date'] as Timestamp).toDate()
           : null,
@@ -375,6 +393,10 @@ class Word {
       examplesEn: legacyExamplesEn,
       examplesVi: legacyExamplesVi,
       group: json['group'],
+      synonym: json['synonym'],
+      synonymMeaningVi: json['synonym_meaning_vi'],
+      antonym: json['antonym'],
+      antonymMeaningVi: json['antonym_meaning_vi'],
       nextReviewDate: json['next_review_date'] != null
           ? DateTime.parse(json['next_review_date'])
           : null,
@@ -397,6 +419,10 @@ class Word {
       'examples_en': examplesEn,
       'examples_vi': examplesVi,
       'group': group,
+      'synonym': synonym,
+      'synonym_meaning_vi': synonymMeaningVi,
+      'antonym': antonym,
+      'antonym_meaning_vi': antonymMeaningVi,
       'next_review_date': nextReviewDate?.toIso8601String(),
       'interval': interval,
       'ease_factor': easeFactor,
@@ -419,6 +445,10 @@ class Word {
     List<String>? examplesEn,
     List<String>? examplesVi,
     String? group,
+    String? synonym,
+    String? synonymMeaningVi,
+    String? antonym,
+    String? antonymMeaningVi,
     DateTime? nextReviewDate,
     int? interval,
     double? easeFactor,
@@ -435,6 +465,10 @@ class Word {
       examplesEn: examplesEn ?? this.examplesEn,
       examplesVi: examplesVi ?? this.examplesVi,
       group: group ?? this.group,
+      synonym: synonym ?? this.synonym,
+      synonymMeaningVi: synonymMeaningVi ?? this.synonymMeaningVi,
+      antonym: antonym ?? this.antonym,
+      antonymMeaningVi: antonymMeaningVi ?? this.antonymMeaningVi,
       nextReviewDate: nextReviewDate ?? this.nextReviewDate,
       interval: interval ?? this.interval,
       easeFactor: easeFactor ?? this.easeFactor,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/word.dart';
 import '../repositories/word_repository.dart';
@@ -16,24 +17,49 @@ class WordProvider with ChangeNotifier {
   String? _error;
   String? get error => _error;
 
+  StreamSubscription<List<Word>>? _wordsSubscription;
+
   WordProvider() {
-    loadWords();
+    _subscribeToWords();
   }
 
-  /// Loads all words from Firestore
-  Future<void> loadWords() async {
+  /// Subscribes to real-time Firestore updates.
+  /// Any change from any device (web, Android, etc.) will automatically
+  /// push a new snapshot and update _words without requiring a manual reload.
+  void _subscribeToWords() {
     _isLoading = true;
-    notifyListeners();
+    // Don't call notifyListeners() here — we're still in the constructor.
 
-    try {
-      _words = await _repository.getWords();
-      _error = null;
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    _wordsSubscription = _repository.wordsStream().listen(
+      (words) {
+        _words = words;
+        _error = null;
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (Object e) {
+        _error = e.toString();
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
+  }
+
+  /// Re-subscribes to the stream (e.g. after a sign-in / sign-out cycle).
+  void resubscribe() {
+    _wordsSubscription?.cancel();
+    _subscribeToWords();
+  }
+
+  /// Manual refresh — cancels and re-creates the stream subscription.
+  Future<void> loadWords() async {
+    resubscribe();
+  }
+
+  @override
+  void dispose() {
+    _wordsSubscription?.cancel();
+    super.dispose();
   }
 
   /// Adds words using Gemini AI and saves to Firestore
@@ -47,7 +73,7 @@ class WordProvider with ChangeNotifier {
       for (var word in newWords) {
         await _repository.addWord(word);
       }
-      await loadWords();
+      // Stream will automatically push the update — no manual loadWords() needed.
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -69,13 +95,85 @@ class WordProvider with ChangeNotifier {
       }
       
       await _repository.addWords(parsedWords);
-      await loadWords();
+      // Stream will automatically push the update.
     } catch (e) {
       _error = e.toString();
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Adds word pairs (synonym/antonym) in bulk from a formatted text string
+  /// Format: "Empty (trống) -> Bare (trống trơn)"
+  Future<void> addWordPairsBulk(String bulkText, {bool isSynonym = true}) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final List<Word> parsedWords = _parseWordPairsText(bulkText, isSynonym: isSynonym);
+      if (parsedWords.isEmpty) {
+        throw Exception(
+          'Không tìm thấy cặp từ nào để thêm. Hãy kiểm tra định dạng.\n'
+          'Định dạng đúng: Word1 (nghĩa1) -> Word2 (nghĩa2)'
+        );
+      }
+      
+      await _repository.addWords(parsedWords);
+      // Stream will automatically push the update.
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Parses word pairs text in the format: "Empty (trống) -> Bare (trống trơn)"
+  /// Returns a list of Word objects with synonym or antonym fields populated.
+  List<Word> _parseWordPairsText(String text, {bool isSynonym = true}) {
+    final List<Word> words = [];
+    
+    // Normalize line-endings
+    final normalizedText = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final lines = normalizedText
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+    
+    // Regex to parse: "Word (meaning) -> RelatedWord (relatedMeaning)"
+    // Captures: 1=Word, 2=meaning, 3=RelatedWord, 4=relatedMeaning
+    final pairRegex = RegExp(
+      r'^([a-zA-Z][a-zA-Z\s\-]*?)\s*\(([^)]+)\)\s*->\s*([a-zA-Z][a-zA-Z\s\-]*?)\s*\(([^)]+)\)$',
+      caseSensitive: false,
+    );
+    
+    for (final line in lines) {
+      final match = pairRegex.firstMatch(line);
+      if (match != null) {
+        final word = match.group(1)!.trim();
+        final meaningVi = match.group(2)!.trim();
+        final relatedWord = match.group(3)!.trim();
+        final relatedMeaningVi = match.group(4)!.trim();
+        
+        if (word.isNotEmpty && relatedWord.isNotEmpty) {
+          words.add(Word(
+            word: word,
+            meaningVi: meaningVi,
+            synonym: isSynonym ? relatedWord : null,
+            synonymMeaningVi: isSynonym ? relatedMeaningVi : null,
+            antonym: isSynonym ? null : relatedWord,
+            antonymMeaningVi: isSynonym ? null : relatedMeaningVi,
+            status: 0,
+            nextReviewDate: DateTime.now(),
+          ));
+        }
+      }
+    }
+    
+    return words;
   }
 
   /// Parses bulk text with flexible formats:
@@ -206,7 +304,7 @@ class WordProvider with ChangeNotifier {
   Future<void> updateWord(Word updatedWord) async {
     try {
       await _repository.updateWord(updatedWord);
-      await loadWords();
+      // Stream will automatically push the update.
     } catch (e) {
       _error = e.toString();
       notifyListeners();
@@ -293,7 +391,7 @@ class WordProvider with ChangeNotifier {
       
       _selectedWords.clear();
       _isSelectionMode = false;
-      await loadWords();
+      // Stream will automatically push the update.
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -316,7 +414,7 @@ class WordProvider with ChangeNotifier {
     }
     _selectedWords.clear();
     _isSelectionMode = false;
-    await loadWords();
+    notifyListeners();
   }
 
   /// Renames a group
@@ -326,7 +424,6 @@ class WordProvider with ChangeNotifier {
       final updatedWord = word.copyWith(group: newName);
       await _repository.updateWord(updatedWord);
     }
-    await loadWords();
   }
 
   /// Removes a word from its group
@@ -344,14 +441,12 @@ class WordProvider with ChangeNotifier {
       status: word.status,
     );
     await _repository.updateWord(updatedWord);
-    await loadWords();
   }
 
   /// Adds a single word to an existing group
   Future<void> addWordToGroup(Word word, String groupName) async {
     final updatedWord = word.copyWith(group: groupName);
     await _repository.updateWord(updatedWord);
-    await loadWords();
   }
 
   /// Gets list of all existing group names (non-null)
@@ -366,7 +461,6 @@ class WordProvider with ChangeNotifier {
     for (var word in wordsInGroup) {
       await _repository.deleteWord(word.english);
     }
-    await loadWords();
   }
 
   void toggleGroupSelection(String? groupName) {
@@ -405,7 +499,7 @@ class WordProvider with ChangeNotifier {
   /// Deletes a single word
   Future<void> deleteWord(Word word) async {
     await _repository.deleteWord(word.english);
-    await loadWords();
+    // Stream will automatically push the update.
   }
 
   // ============================================
@@ -459,7 +553,7 @@ class WordProvider with ChangeNotifier {
     );
 
     await _repository.updateWord(updatedWord);
-    await loadWords();
+    // Stream will automatically push the update.
   }
 
   /// Returns words that are due for review (nextReviewDate <= now or null)
