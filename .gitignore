@@ -50,6 +50,7 @@ android/app/google-services.json
 firebase.json
 lib/firebase_options.dart
 .metadata
+*firebase-adminsdk*.json
 
 # Android/Kotlin build sessions
 android/.kotlin/
