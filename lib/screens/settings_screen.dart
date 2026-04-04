@@ -77,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         _isLoading = false;
       });
-// ... (rest of method)
+      // ... (rest of method)
 
       // Sync TTS service with cloud settings
       await TtsService.instance.setSpeechRate(_speechRate);
@@ -121,9 +121,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           await settingsBox.put(key, value);
         } else {
           GeminiService.setWebSettings(
-            apiKey: key == 'apiKey'
-                ? value as String
-                : GeminiService.webApiKey,
+            apiKey: key == 'apiKey' ? value as String : GeminiService.webApiKey,
             modelName: key == 'modelName' ? value as String : null,
           );
         }
@@ -258,11 +256,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _applyNotificationSchedule() async {
     final notificationService = NotificationService();
 
-    // Show loading
+    // Show loading with message
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Đang lên lịch thông báo...\nVui lòng đợi',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
     );
 
     try {
@@ -287,15 +297,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           .map((t) => {'hour': t.hour, 'minute': t.minute})
           .toList();
 
-      await notificationService.scheduleWithCustomTimes(schedules);
-      final pending = await notificationService.getPendingNotifications();
+      final scheduledCount = await notificationService.scheduleWithCustomTimes(
+        schedules,
+      );
 
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã lên lịch ${pending.length} thông báo!'),
+            content: Text('Đã lên lịch $scheduledCount thông báo thành công!'),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -303,7 +315,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Lỗi: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
@@ -512,92 +528,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // Section C: Notifications (mobile only)
                   // ==========================================
                   if (!kIsWeb) ...[
-                  _buildSectionHeader(
-                    'Thông báo ôn tập',
-                    Icons.notifications_active,
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Enable/Disable notifications toggle
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                    _buildSectionHeader(
+                      'Thông báo ôn tập',
+                      Icons.notifications_active,
                     ),
-                    decoration: BoxDecoration(
-                      color: _notificationsEnabled
-                          ? Colors.green.shade50
-                          : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _notificationsEnabled
-                            ? Colors.green.shade300
-                            : Colors.grey.shade300,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _notificationsEnabled
-                              ? Icons.notifications_active
-                              : Icons.notifications_off,
-                          color: _notificationsEnabled
-                              ? Colors.green
-                              : Colors.grey,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Thông báo ôn tập',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              Text(
-                                _notificationsEnabled ? 'Đang bật' : 'Đang tắt',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Switch(
-                          value: _notificationsEnabled,
-                          onChanged: _toggleNotifications,
-                          activeThumbColor: Colors.green,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  if (_notificationsEnabled) ...[
                     const SizedBox(height: 12),
 
-                    // Hardcore Mode Toggle
+                    // Enable/Disable notifications toggle
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: _isPersistentMode
-                            ? Colors.red.shade50
+                        color: _notificationsEnabled
+                            ? Colors.green.shade50
                             : Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: _isPersistentMode
-                              ? Colors.red.shade300
+                          color: _notificationsEnabled
+                              ? Colors.green.shade300
                               : Colors.grey.shade300,
                         ),
                       ),
                       child: Row(
                         children: [
                           Icon(
-                            Icons.gavel,
-                            color: _isPersistentMode ? Colors.red : Colors.grey,
+                            _notificationsEnabled
+                                ? Icons.notifications_active
+                                : Icons.notifications_off,
+                            color: _notificationsEnabled
+                                ? Colors.green
+                                : Colors.grey,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -605,11 +567,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
-                                  'Chế độ Kỷ luật (Hardcore Mode)',
+                                  'Thông báo ôn tập',
                                   style: TextStyle(fontWeight: FontWeight.w600),
                                 ),
                                 Text(
-                                  'Thông báo sẽ không thể bị xóa cho đến khi bạn học.',
+                                  _notificationsEnabled
+                                      ? 'Đang bật'
+                                      : 'Đang tắt',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey.shade600,
@@ -619,157 +583,216 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           Switch(
-                            value: _isPersistentMode,
-                            onChanged: (value) async {
-                              setState(() => _isPersistentMode = value);
-                              await _saveSetting('isPersistentMode', value);
-                              if (_notificationsEnabled) {
-                                await _applyNotificationSchedule();
-                              }
-                            },
-                            activeThumbColor: Colors.red,
+                            value: _notificationsEnabled,
+                            onChanged: _toggleNotifications,
+                            activeThumbColor: Colors.green,
                           ),
                         ],
                       ),
                     ),
 
-                    const SizedBox(height: 16),
+                    if (_notificationsEnabled) ...[
+                      const SizedBox(height: 12),
 
-                    // Custom notification times
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.shade200),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.schedule,
-                                color: Colors.blue.shade700,
-                                size: 20,
+                      // Hardcore Mode Toggle
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _isPersistentMode
+                              ? Colors.red.shade50
+                              : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _isPersistentMode
+                                ? Colors.red.shade300
+                                : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.gavel,
+                              color: _isPersistentMode
+                                  ? Colors.red
+                                  : Colors.grey,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Chế độ Kỷ luật (Hardcore Mode)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Thông báo sẽ không thể bị xóa cho đến khi bạn học.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Khung giờ thông báo (${_notificationTimes.length} lần/ngày)',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
+                            ),
+                            Switch(
+                              value: _isPersistentMode,
+                              onChanged: (value) async {
+                                setState(() => _isPersistentMode = value);
+                                await _saveSetting('isPersistentMode', value);
+                                if (_notificationsEnabled) {
+                                  await _applyNotificationSchedule();
+                                }
+                              },
+                              activeThumbColor: Colors.red,
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Custom notification times
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.schedule,
+                                  color: Colors.blue.shade700,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Khung giờ thông báo (${_notificationTimes.length} lần/ngày)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.add_circle,
                                     color: Colors.blue.shade700,
                                   ),
+                                  onPressed: _addNotificationTime,
+                                  tooltip: 'Thêm khung giờ',
                                 ),
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.add_circle,
-                                  color: Colors.blue.shade700,
-                                ),
-                                onPressed: _addNotificationTime,
-                                tooltip: 'Thêm khung giờ',
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-
-                          // List of notification times
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: List.generate(_notificationTimes.length, (
-                              index,
-                            ) {
-                              final time = _notificationTimes[index];
-                              return GestureDetector(
-                                onTap: () => _editNotificationTime(index),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: Colors.blue.shade300,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.blue.withOpacity(0.1),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.access_time,
-                                        size: 16,
-                                        color: Colors.blue.shade700,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        _formatTimeOfDay(time),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.blue.shade700,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      GestureDetector(
-                                        onTap: () =>
-                                            _removeNotificationTime(index),
-                                        child: Icon(
-                                          Icons.close,
-                                          size: 16,
-                                          color: Colors.red.shade400,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }),
-                          ),
-
-                          const SizedBox(height: 12),
-                          Text(
-                            'Nhấn vào giờ để chỉnh sửa, nhấn X để xóa',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade600,
-                              fontStyle: FontStyle.italic,
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 12),
+
+                            // List of notification times
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: List.generate(
+                                _notificationTimes.length,
+                                (index) {
+                                  final time = _notificationTimes[index];
+                                  return GestureDetector(
+                                    onTap: () => _editNotificationTime(index),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: Colors.blue.shade300,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.blue.withOpacity(0.1),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.access_time,
+                                            size: 16,
+                                            color: Colors.blue.shade700,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            _formatTimeOfDay(time),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.blue.shade700,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          GestureDetector(
+                                            onTap: () =>
+                                                _removeNotificationTime(index),
+                                            child: Icon(
+                                              Icons.close,
+                                              size: 16,
+                                              color: Colors.red.shade400,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(height: 12),
+                            Text(
+                              'Nhấn vào giờ để chỉnh sửa, nhấn X để xóa',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
 
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                    // Apply schedule button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _applyNotificationSchedule,
-                        icon: const Icon(Icons.check_circle),
-                        label: const Text('Áp dụng lịch thông báo'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      // Apply schedule button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _applyNotificationSchedule,
+                          icon: const Icon(Icons.check_circle),
+                          label: const Text('Áp dụng lịch thông báo'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
                   ], // end if (!kIsWeb)
 
                   const Divider(height: 32),

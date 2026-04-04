@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -140,7 +141,9 @@ class NotificationService {
       'exactAlarms': isGranted, // Simplified for check
     };
 
-    debugPrint('NotificationService: Permissions check = $result (Status: $status)');
+    debugPrint(
+      'NotificationService: Permissions check = $result (Status: $status)',
+    );
     return result;
   }
 
@@ -166,36 +169,126 @@ class NotificationService {
   // Vocabulary Selection (Spaced Repetition)
   // ============================================
 
-  /// Select a word using spaced repetition algorithm
-  Future<Word?> _selectWordBySpacedRepetition(List<Word> allWords) async {
-    if (allWords.isEmpty) return null;
+  /// Pre-categorize words by status for efficient batch selection
+  Map<int, List<Word>> _categorizeWordsByStatus(List<Word> words) {
+    final Map<int, List<Word>> categorized = {
+      0: [], // Forgot
+      1: [], // Hard
+      2: [], // Good
+      3: [], // Easy
+    };
 
-    final random = Random();
-    final roll = random.nextDouble();
-
-    final forgotWords = allWords.where((w) => w.status == 0).toList();
-    final hardWords = allWords.where((w) => w.status == 1).toList();
-    final goodWords = allWords.where((w) => w.status == 2).toList();
-    final easyWords = allWords.where((w) => w.status >= 3).toList();
-
-    List<Word> pool;
-
-    if (roll < 0.70 && forgotWords.isNotEmpty) {
-      pool = forgotWords;
-    } else if (roll < 0.90 && hardWords.isNotEmpty) {
-      pool = hardWords;
-    } else if (roll < 0.98 && goodWords.isNotEmpty) {
-      pool = goodWords;
-    } else if (easyWords.isNotEmpty) {
-      pool = easyWords;
-    } else if (forgotWords.isNotEmpty) {
-      pool = forgotWords;
-    } else {
-      pool = allWords;
+    for (var word in words) {
+      final status = word.status.clamp(0, 3);
+      categorized[status]!.add(word);
     }
 
-    pool.shuffle();
-    return pool.first;
+    // Shuffle each category once
+    for (var list in categorized.values) {
+      list.shuffle();
+    }
+
+    return categorized;
+  }
+
+  /// Select multiple words efficiently using batch selection with spaced repetition
+  /// This is much faster than calling _selectWordBySpacedRepetition() many times
+  /// Returns up to 'count' words, may return fewer if word pool is exhausted
+  List<Word> _batchSelectWords(
+    Map<int, List<Word>> categorizedWords,
+    int count,
+  ) {
+    final List<Word> selected = [];
+    final random = Random();
+
+    // Calculate total available words
+    final totalAvailable = categorizedWords.values.fold<int>(
+      0,
+      (sum, list) => sum + list.length,
+    );
+
+    if (totalAvailable == 0) {
+      debugPrint('NotificationService: No words available for selection');
+      return selected;
+    }
+
+    // Adjust count if not enough words available
+    final actualCount = count.clamp(0, totalAvailable);
+    if (actualCount < count) {
+      debugPrint(
+        'NotificationService: Only $actualCount words available (requested $count)',
+      );
+    }
+
+    // Keep track of selected indices per category to avoid duplicates
+    final Map<int, int> categoryIndices = {0: 0, 1: 0, 2: 0, 3: 0};
+
+    for (int i = 0; i < actualCount; i++) {
+      final roll = random.nextDouble();
+      int selectedStatus;
+
+      // Spaced repetition probabilities:
+      // 70% Forgot (status 0)
+      // 20% Hard (status 1)
+      // 8% Good (status 2)
+      // 2% Easy (status 3)
+      if (roll < 0.70) {
+        selectedStatus = 0;
+      } else if (roll < 0.90) {
+        selectedStatus = 1;
+      } else if (roll < 0.98) {
+        selectedStatus = 2;
+      } else {
+        selectedStatus = 3;
+      }
+
+      // Try to get word from selected category
+      Word? word = _getNextWordFromCategory(
+        categorizedWords,
+        selectedStatus,
+        categoryIndices,
+      );
+
+      // Fallback: try other categories in priority order
+      if (word == null) {
+        for (var status in [0, 1, 2, 3]) {
+          word = _getNextWordFromCategory(
+            categorizedWords,
+            status,
+            categoryIndices,
+          );
+          if (word != null) break;
+        }
+      }
+
+      if (word != null) {
+        selected.add(word);
+      } else {
+        debugPrint('NotificationService: Could not find word at index $i');
+        break; // Stop if no more words available
+      }
+    }
+
+    debugPrint('NotificationService: Selected ${selected.length} words');
+    return selected;
+  }
+
+  /// Get next word from a specific category
+  Word? _getNextWordFromCategory(
+    Map<int, List<Word>> categorizedWords,
+    int status,
+    Map<int, int> indices,
+  ) {
+    final category = categorizedWords[status]!;
+    final currentIndex = indices[status]!;
+
+    if (currentIndex < category.length) {
+      final word = category[currentIndex];
+      indices[status] = currentIndex + 1;
+      return word;
+    }
+
+    return null;
   }
 
   // ============================================
@@ -269,8 +362,10 @@ class NotificationService {
   // ============================================
 
   /// Schedule notifications for TODAY and the next 7 days
-  Future<void> scheduleNext7Days() async {
-    if (kIsWeb) return;
+  /// Optimized for large word lists (3000+ words)
+  /// Returns the number of notifications scheduled
+  Future<int> scheduleNext7Days() async {
+    if (kIsWeb) return 0;
     await _notifications.cancelAll();
     await PersistentNotificationChannel.cancelAll();
     debugPrint('NotificationService: Cancelled all existing notifications');
@@ -283,15 +378,21 @@ class NotificationService {
       isPersistentMode = settings['isPersistentMode'] ?? false;
     } catch (e) {
       debugPrint('NotificationService: Error fetching data: $e');
-      return;
+      return 0;
     }
 
-    if (allWords.isEmpty) return;
+    if (allWords.isEmpty) {
+      debugPrint('NotificationService: No words found');
+      return 0;
+    }
 
-    int totalScheduled = 0;
+    debugPrint('NotificationService: Found ${allWords.length} words');
+
     final now = tz.TZDateTime.now(tz.local);
+    final List<tz.TZDateTime> scheduleTimes = [];
 
-    // Schedule for TODAY
+    // Calculate all schedule times first
+    // TODAY
     for (int slotIndex = 0; slotIndex < _dailySchedules.length; slotIndex++) {
       final schedule = _dailySchedules[slotIndex];
       final hour = schedule['hour']!;
@@ -307,29 +408,16 @@ class NotificationService {
       );
 
       if (todaySlot.isAfter(now)) {
-        final word = await _selectWordBySpacedRepetition(allWords);
-        if (word == null) continue;
-
-        final notificationId = 1000 + slotIndex;
-        await _scheduleReminderNotification(
-          id: notificationId,
-          word: word,
-          scheduledDate: todaySlot,
-          isPersistentMode: isPersistentMode,
-        );
-        totalScheduled++;
+        scheduleTimes.add(todaySlot);
       }
     }
 
-    // Schedule for the next 7 days
+    // Next 7 days
     for (int dayIndex = 1; dayIndex <= 7; dayIndex++) {
       for (int slotIndex = 0; slotIndex < _dailySchedules.length; slotIndex++) {
         final schedule = _dailySchedules[slotIndex];
         final hour = schedule['hour']!;
         final minute = schedule['minute']!;
-
-        final word = await _selectWordBySpacedRepetition(allWords);
-        if (word == null) continue;
 
         final scheduledDate = tz.TZDateTime(
           tz.local,
@@ -340,30 +428,67 @@ class NotificationService {
           minute,
         );
 
-        final notificationId = (dayIndex * 10) + slotIndex;
+        scheduleTimes.add(scheduledDate);
+      }
+    }
+
+    debugPrint(
+      'NotificationService: Calculated ${scheduleTimes.length} time slots',
+    );
+
+    // Batch select words all at once (much faster than individual selection)
+    debugPrint(
+      'NotificationService: Batch selecting ${scheduleTimes.length} words from ${allWords.length} words',
+    );
+    final categorizedWords = _categorizeWordsByStatus(allWords);
+    final selectedWords = _batchSelectWords(
+      categorizedWords,
+      scheduleTimes.length,
+    );
+
+    if (selectedWords.isEmpty) {
+      debugPrint('NotificationService: No words selected');
+      return 0;
+    }
+
+    // Schedule all notifications
+    int totalScheduled = 0;
+    for (int i = 0; i < scheduleTimes.length && i < selectedWords.length; i++) {
+      final notificationId = 1000 + i;
+      try {
         await _scheduleReminderNotification(
           id: notificationId,
-          word: word,
-          scheduledDate: scheduledDate,
+          word: selectedWords[i],
+          scheduledDate: scheduleTimes[i],
           isPersistentMode: isPersistentMode,
         );
         totalScheduled++;
+      } catch (e) {
+        debugPrint(
+          'NotificationService: Error scheduling notification $notificationId: $e',
+        );
       }
     }
 
     debugPrint('NotificationService: Total scheduled: $totalScheduled');
+    return totalScheduled;
   }
 
   /// Schedule notifications with custom times from user settings
-  Future<void> scheduleWithCustomTimes(
+  /// Optimized for large word lists (3000+ words)
+  /// Returns the number of notifications scheduled
+  Future<int> scheduleWithCustomTimes(
     List<Map<String, int>> customSchedules,
   ) async {
-    if (kIsWeb) return;
+    if (kIsWeb) return 0;
     await _notifications.cancelAll();
     await PersistentNotificationChannel.cancelAll();
     debugPrint('NotificationService: Cancelled all existing notifications');
 
-    if (customSchedules.isEmpty) return;
+    if (customSchedules.isEmpty) {
+      debugPrint('NotificationService: No custom schedules provided');
+      return 0;
+    }
 
     List<Word> allWords = [];
     bool isPersistentMode = false;
@@ -373,14 +498,20 @@ class NotificationService {
       isPersistentMode = settings['isPersistentMode'] ?? false;
     } catch (e) {
       debugPrint('NotificationService: Error fetching data: $e');
-      return;
+      return 0;
     }
 
-    if (allWords.isEmpty) return;
+    if (allWords.isEmpty) {
+      debugPrint('NotificationService: No words found');
+      return 0;
+    }
 
-    int totalScheduled = 0;
+    debugPrint('NotificationService: Found ${allWords.length} words');
+
     final now = tz.TZDateTime.now(tz.local);
+    final List<tz.TZDateTime> scheduleTimes = [];
 
+    // Calculate all schedule times
     for (int dayIndex = 0; dayIndex <= 7; dayIndex++) {
       for (int slotIndex = 0; slotIndex < customSchedules.length; slotIndex++) {
         final schedule = customSchedules[slotIndex];
@@ -397,21 +528,51 @@ class NotificationService {
         );
 
         if (scheduledDate.isAfter(now)) {
-          final word = await _selectWordBySpacedRepetition(allWords);
-          if (word == null) continue;
-
-          final notificationId = (dayIndex * 100) + slotIndex;
-          await _scheduleReminderNotification(
-            id: notificationId,
-            word: word,
-            scheduledDate: scheduledDate,
-            isPersistentMode: isPersistentMode,
-          );
-          totalScheduled++;
+          scheduleTimes.add(scheduledDate);
         }
       }
     }
+
+    debugPrint(
+      'NotificationService: Calculated ${scheduleTimes.length} time slots',
+    );
+
+    // Batch select words all at once
+    debugPrint(
+      'NotificationService: Batch selecting ${scheduleTimes.length} words from ${allWords.length} words',
+    );
+    final categorizedWords = _categorizeWordsByStatus(allWords);
+    final selectedWords = _batchSelectWords(
+      categorizedWords,
+      scheduleTimes.length,
+    );
+
+    if (selectedWords.isEmpty) {
+      debugPrint('NotificationService: No words selected');
+      return 0;
+    }
+
+    // Schedule all notifications
+    int totalScheduled = 0;
+    for (int i = 0; i < scheduleTimes.length && i < selectedWords.length; i++) {
+      final notificationId = 1000 + i;
+      try {
+        await _scheduleReminderNotification(
+          id: notificationId,
+          word: selectedWords[i],
+          scheduledDate: scheduleTimes[i],
+          isPersistentMode: isPersistentMode,
+        );
+        totalScheduled++;
+      } catch (e) {
+        debugPrint(
+          'NotificationService: Error scheduling notification $notificationId: $e',
+        );
+      }
+    }
+
     debugPrint('NotificationService: Total custom scheduled: $totalScheduled');
+    return totalScheduled;
   }
 
   // ============================================
@@ -432,7 +593,9 @@ class NotificationService {
 
     // Trên Android với persistent mode: dùng native alarm + setDeleteIntent
     // để notification tự re-show khi bị dismiss (Android 14+ không ngăn swipe nữa).
-    if (isPersistentMode && !kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    if (isPersistentMode &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android) {
       await PersistentNotificationChannel.scheduleAlarm(
         id: id,
         timeMs: scheduledDate.millisecondsSinceEpoch,
