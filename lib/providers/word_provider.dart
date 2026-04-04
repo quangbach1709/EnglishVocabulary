@@ -188,102 +188,67 @@ class WordProvider with ChangeNotifier {
 
   /// Parses bulk text with flexible formats:
   /// 1. Word POS /IPA/ Meaning  (all on one line, space-separated)
-  /// 2. Word \n POS \n /IPA/ Meaning  (multi-line per entry)
+  /// 2. Word POS/IPA/ Meaning  (POS directly attached to IPA)
+  /// 3. Word \n POS \n /IPA/ Meaning  (multi-line per entry)
   ///
-  /// Strategy: locate every entry boundary by finding positions where an
-  /// ASCII-only English word is immediately followed by a POS tag and then
-  /// a /IPA/ block.  We split the raw text at those boundaries so that the
-  /// "meaning" of entry N can contain arbitrary Unicode (Vietnamese) without
-  /// leaking into entry N+1.
+  /// Supports formats like:
+  /// - "limited adj./'limitid/ hạn chế"
+  /// - "link v.,n./liɳk/ liên kết"
+  /// - "list n.,v./list/ danh sách; liệt kê"
   List<Word> _parseBulkText(String text) {
     final List<Word> words = [];
 
     // Normalize line-endings
     final normalizedText = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
-    // Regex that matches the *start* of an entry:
-    //   ^EnglishWord  POS  /ipa/
-    // We use this only to find the split positions; the meaning is
-    // everything between two such boundaries.
-    final entryStart = RegExp(
-      r'(?:^|(?<=\s))([a-zA-Z][a-zA-Z0-9\s\-]*?)\s+'
-      r'((?:(?:n|v|adj|adv|prep)\.?,?\s*)+)'
-      r'(/[^/]+/(?:\s*or\s*/[^/]+/)*)',
-      caseSensitive: false,
-    );
+    // Try line-by-line parsing first (most common format)
+    final lines = normalizedText
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
 
-    final allMatches = entryStart.allMatches(normalizedText).toList();
-
-    for (int i = 0; i < allMatches.length; i++) {
-      final m = allMatches[i];
-
-      final wordRaw = m.group(1)!.trim();
-      final posStr = m.group(2)!.trim();
-      final ipa = m.group(3)!.trim();
-
-      // The meaning is everything after the IPA block up to the start of the
-      // next entry (or end of string).  Because we slice by index there is no
-      // chance of a trailing character leaking into the next word.
-      final meaningStart = m.end;
-      final meaningEnd = (i + 1 < allMatches.length)
-          ? allMatches[i + 1].start
-          : normalizedText.length;
-
-      final meaning = normalizedText.substring(meaningStart, meaningEnd).trim();
-
-      if (wordRaw.isNotEmpty && ipa.isNotEmpty) {
-        words.add(
-          Word(
-            word: wordRaw,
-            pos: _parsePos(posStr),
-            ipa: ipa,
-            meaningVi: meaning,
-            status: 0,
-            nextReviewDate: DateTime.now(),
-          ),
-        );
+    for (var line in lines) {
+      final parsed = _parseSingleLine(line);
+      if (parsed != null) {
+        words.add(parsed);
       }
     }
 
-    // Fallback: line-by-line for very simple single-line formats
+    // If line-by-line didn't work, try the original multi-entry approach
     if (words.isEmpty) {
-      final lines = normalizedText
-          .split('\n')
-          .map((l) => l.trim())
-          .where((l) => l.isNotEmpty)
-          .toList();
+      final entryStart = RegExp(
+        r'(?:^|(?<=\s))([a-zA-Z][a-zA-Z0-9\s\-]*?)\s+'
+        r'((?:(?:n|v|adj|adv|prep)\.?,?\s*)+)'
+        r'(/[^/]+/(?:\s*or\s*/[^/]+/)*)',
+        caseSensitive: false,
+      );
 
-      for (var line in lines) {
-        // Find the first /IPA/ block on this line
-        final ipaMatch = RegExp(r'(/[^/]+/)').firstMatch(line);
-        if (ipaMatch == null) continue;
+      final allMatches = entryStart.allMatches(normalizedText).toList();
 
-        final ipa = ipaMatch.group(1)!;
-        final ipaIndex = line.indexOf(ipa);
+      for (int i = 0; i < allMatches.length; i++) {
+        final m = allMatches[i];
 
-        final beforeIpa = line.substring(0, ipaIndex).trim();
-        final afterIpa = line.substring(ipaIndex + ipa.length).trim();
+        final wordRaw = m.group(1)!.trim();
+        final posStr = m.group(2)!.trim();
+        final ipa = m.group(3)!.trim();
 
-        String wordPart = beforeIpa;
-        String posPart = '';
+        final meaningStart = m.end;
+        final meaningEnd = (i + 1 < allMatches.length)
+            ? allMatches[i + 1].start
+            : normalizedText.length;
 
-        final posRegex = RegExp(
-          r'(.*?)\s+((?:n\.|v\.|adj\.|adv\.|prep\.)+)$',
-          caseSensitive: false,
-        );
-        final pMatch = posRegex.firstMatch(beforeIpa);
-        if (pMatch != null) {
-          wordPart = pMatch.group(1)!.trim();
-          posPart = pMatch.group(2)!.trim();
-        }
+        final meaning = normalizedText
+            .substring(meaningStart, meaningEnd)
+            .trim();
 
-        if (wordPart.isNotEmpty) {
+        if (wordRaw.isNotEmpty && ipa.isNotEmpty) {
           words.add(
             Word(
-              word: wordPart,
-              pos: _parsePos(posPart),
+              word: wordRaw,
+              pos: _parsePos(posStr),
               ipa: ipa,
-              meaningVi: afterIpa,
+              meaningVi: meaning,
               status: 0,
               nextReviewDate: DateTime.now(),
             ),
@@ -293,6 +258,60 @@ class WordProvider with ChangeNotifier {
     }
 
     return words;
+  }
+
+  /// Parses a single line in format: "word POS/IPA/ meaning"
+  /// Handles formats like:
+  /// - "limited adj./'limitid/ hạn chế"
+  /// - "link v.,n./liɳk/ liên kết"
+  /// - "list n., v. /list/ danh sách"
+  Word? _parseSingleLine(String line) {
+    // Find the IPA block (anything between / /)
+    final ipaMatch = RegExp(r'/[^/]+/').firstMatch(line);
+    if (ipaMatch == null) return null;
+
+    final ipa = ipaMatch.group(0)!;
+    final ipaStart = ipaMatch.start;
+    final ipaEnd = ipaMatch.end;
+
+    final beforeIpa = line.substring(0, ipaStart).trim();
+    final afterIpa = line.substring(ipaEnd).trim();
+
+    if (beforeIpa.isEmpty) return null;
+
+    // Parse the part before IPA to extract word and POS
+    // Format: "word POS" where POS can be "adj.", "v.,n.", "n., v.", etc.
+    // POS is typically at the end, right before IPA
+
+    // Regex to match POS patterns at the end of beforeIpa
+    // Matches: "adj.", "v.,n.", "n., v.", "v., n.", "adj.,adv.", etc.
+    final posPattern = RegExp(
+      r'^(.*?)\s+((?:(?:n|v|adj|adv|prep|conj|pron|det|interj)\.?,?\s*)+)$',
+      caseSensitive: false,
+    );
+
+    String wordPart = '';
+    String posPart = '';
+
+    final posMatch = posPattern.firstMatch(beforeIpa);
+    if (posMatch != null) {
+      wordPart = posMatch.group(1)!.trim();
+      posPart = posMatch.group(2)!.trim();
+    } else {
+      // No POS found, the whole beforeIpa is the word
+      wordPart = beforeIpa;
+    }
+
+    if (wordPart.isEmpty) return null;
+
+    return Word(
+      word: wordPart,
+      pos: _parsePos(posPart),
+      ipa: ipa,
+      meaningVi: afterIpa,
+      status: 0,
+      nextReviewDate: DateTime.now(),
+    );
   }
 
   /// Helper to parse POS string into a list of normalized POS names
@@ -434,6 +453,109 @@ class WordProvider with ChangeNotifier {
   // ============================================
   final Set<String> _collapsedGroups = {};
   Set<String> get collapsedGroups => _collapsedGroups;
+
+  // ============================================
+  // Search and Filter State
+  // ============================================
+  String _searchQuery = '';
+  String get searchQuery => _searchQuery;
+
+  final Set<String> _selectedPosFilters = {};
+  Set<String> get selectedPosFilters => _selectedPosFilters;
+
+  /// All unique POS values across all words
+  List<String> get availablePosFilters {
+    final Set<String> allPos = {};
+    for (var word in _words) {
+      allPos.addAll(word.pos);
+    }
+    return allPos.toList()..sort();
+  }
+
+  /// Update search query
+  void setSearchQuery(String query) {
+    _searchQuery = query.toLowerCase().trim();
+    notifyListeners();
+  }
+
+  /// Clear search query
+  void clearSearch() {
+    _searchQuery = '';
+    notifyListeners();
+  }
+
+  /// Toggle a POS filter
+  void togglePosFilter(String pos) {
+    if (_selectedPosFilters.contains(pos)) {
+      _selectedPosFilters.remove(pos);
+    } else {
+      _selectedPosFilters.add(pos);
+    }
+    notifyListeners();
+  }
+
+  /// Clear all POS filters
+  void clearPosFilters() {
+    _selectedPosFilters.clear();
+    notifyListeners();
+  }
+
+  /// Clear all filters (search + POS)
+  void clearAllFilters() {
+    _searchQuery = '';
+    _selectedPosFilters.clear();
+    notifyListeners();
+  }
+
+  /// Check if any filter is active
+  bool get hasActiveFilters =>
+      _searchQuery.isNotEmpty || _selectedPosFilters.isNotEmpty;
+
+  /// Get filtered words based on search query and POS filters
+  List<Word> get filteredWords {
+    if (!hasActiveFilters) return _words;
+
+    return _words.where((word) {
+      // Check search query (word or meaning)
+      if (_searchQuery.isNotEmpty) {
+        final matchesWord = word.word.toLowerCase().contains(_searchQuery);
+        final matchesMeaning =
+            word.meaningVi.toLowerCase().contains(_searchQuery) ||
+            word.primaryMeaning.toLowerCase().contains(_searchQuery) ||
+            word.primaryShortMeaning.toLowerCase().contains(_searchQuery) ||
+            word.allMeaningsVi.toLowerCase().contains(_searchQuery);
+
+        if (!matchesWord && !matchesMeaning) {
+          return false;
+        }
+      }
+
+      // Check POS filters
+      if (_selectedPosFilters.isNotEmpty) {
+        final hasMatchingPos = word.pos.any(
+          (pos) => _selectedPosFilters.contains(pos),
+        );
+        if (!hasMatchingPos) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
+  }
+
+  /// Get filtered words grouped by group name
+  Map<String?, List<Word>> get filteredWordsByGroup {
+    final words = filteredWords;
+    final Map<String?, List<Word>> grouped = {};
+    for (var word in words) {
+      if (!grouped.containsKey(word.group)) {
+        grouped[word.group] = [];
+      }
+      grouped[word.group]!.add(word);
+    }
+    return grouped;
+  }
 
   /// Creates a group for selected words
   Future<void> createGroup(String groupName) async {

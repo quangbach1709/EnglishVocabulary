@@ -35,122 +35,47 @@ class WordItem implements ListItem {
   WordItem(this.word, {this.isGrouped = false, this.isLastInGroup = false});
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _isSearching = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<WordProvider>(
       builder: (context, provider, child) {
         return Scaffold(
-          appBar: AppBar(
-            leading: Builder(
-              builder: (context) {
-                return IconButton(
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                );
-              },
-            ),
-            title: Text(
-              provider.selectedWords.isNotEmpty
-                  ? '${provider.selectedWords.length} Selected'
-                  : 'My Vocabulary',
-            ),
-            actions: [
-              Checkbox(
-                value: provider.allSelected,
-                onChanged: (_) => provider.toggleSelectAll(),
-                fillColor: MaterialStateProperty.resolveWith((states) {
-                  if (states.contains(MaterialState.selected)) {
-                    return Colors.white;
-                  }
-                  return null;
-                }),
-                checkColor: Colors.blue,
-              ),
-              IconButton(
-                icon: const Icon(Icons.school),
-                tooltip: 'Start Review',
-                onPressed: provider.words.isEmpty
-                    ? null
-                    : () => _showReviewOptionsSheet(context, provider),
-              ),
-              if (provider.selectedWords.isNotEmpty) ...[
-                IconButton(
-                  icon: const Icon(Icons.folder),
-                  tooltip: 'Group Selected',
-                  onPressed: () => _showCreateGroupDialog(context, provider),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  tooltip: 'Delete Selected',
-                  onPressed: () => _confirmDeleteSelected(context, provider),
-                ),
-              ],
-              IconButton(
-                icon: const Icon(Icons.settings),
-                tooltip: 'Settings',
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SettingsScreen(),
-                    ),
-                  );
-                },
+          appBar: _isSearching
+              ? _buildSearchAppBar(provider)
+              : _buildNormalAppBar(context, provider),
+          drawer: _buildDrawer(context),
+          body: Column(
+            children: [
+              // POS Filter chips
+              if (provider.availablePosFilters.isNotEmpty)
+                _buildPosFilterChips(provider),
+              // Active filters indicator
+              if (provider.hasActiveFilters) _buildActiveFiltersBar(provider),
+              // Words list
+              Expanded(
+                child: provider.words.isEmpty
+                    ? const Center(child: Text('No words yet. Add some!'))
+                    : _buildGroupedList(context, provider),
               ),
             ],
           ),
-          drawer: Drawer(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                const DrawerHeader(
-                  decoration: BoxDecoration(color: Colors.blue),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(
-                        'English Learning',
-                        style: TextStyle(color: Colors.white, fontSize: 24),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Menu',
-                        style: TextStyle(color: Colors.white70, fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.book),
-                  title: const Text('Vocabulary'),
-                  selected: true,
-                  onTap: () {
-                    Navigator.pop(context); // Close drawer
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.library_books),
-                  title: const Text('Grammar'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const GrammarListScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          body: provider.words.isEmpty
-              ? const Center(child: Text('No words yet. Add some!'))
-              : _buildGroupedList(context, provider),
           floatingActionButton: FloatingActionButton(
             onPressed: () {
               Navigator.push(
@@ -165,8 +90,263 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  PreferredSizeWidget _buildSearchAppBar(WordProvider provider) {
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () {
+          setState(() {
+            _isSearching = false;
+            _searchController.clear();
+          });
+          provider.clearSearch();
+        },
+      ),
+      title: TextField(
+        controller: _searchController,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: 'Tìm từ hoặc nghĩa...',
+          border: InputBorder.none,
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.white),
+                  onPressed: () {
+                    _searchController.clear();
+                    provider.clearSearch();
+                  },
+                )
+              : null,
+        ),
+        style: const TextStyle(color: Colors.white, fontSize: 18),
+        onChanged: (value) {
+          provider.setSearchQuery(value);
+          setState(() {}); // Update clear button visibility
+        },
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildNormalAppBar(
+    BuildContext context,
+    WordProvider provider,
+  ) {
+    return AppBar(
+      leading: Builder(
+        builder: (context) {
+          return IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          );
+        },
+      ),
+      title: Text(
+        provider.selectedWords.isNotEmpty
+            ? '${provider.selectedWords.length} Selected'
+            : 'My Vocabulary',
+      ),
+      actions: [
+        // Search button
+        IconButton(
+          icon: const Icon(Icons.search),
+          tooltip: 'Tìm kiếm',
+          onPressed: () {
+            setState(() => _isSearching = true);
+          },
+        ),
+        Checkbox(
+          value: provider.allSelected,
+          onChanged: (_) => provider.toggleSelectAll(),
+          fillColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return Colors.white;
+            }
+            return null;
+          }),
+          checkColor: Colors.blue,
+        ),
+        IconButton(
+          icon: const Icon(Icons.school),
+          tooltip: 'Start Review',
+          onPressed: provider.words.isEmpty
+              ? null
+              : () => _showReviewOptionsSheet(context, provider),
+        ),
+        if (provider.selectedWords.isNotEmpty) ...[
+          IconButton(
+            icon: const Icon(Icons.folder),
+            tooltip: 'Group Selected',
+            onPressed: () => _showCreateGroupDialog(context, provider),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete),
+            tooltip: 'Delete Selected',
+            onPressed: () => _confirmDeleteSelected(context, provider),
+          ),
+        ],
+        IconButton(
+          icon: const Icon(Icons.settings),
+          tooltip: 'Settings',
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SettingsScreen()),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDrawer(BuildContext context) {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          const DrawerHeader(
+            decoration: BoxDecoration(color: Colors.blue),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  'English Learning',
+                  style: TextStyle(color: Colors.white, fontSize: 24),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Menu',
+                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.book),
+            title: const Text('Vocabulary'),
+            selected: true,
+            onTap: () {
+              Navigator.pop(context); // Close drawer
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.library_books),
+            title: const Text('Grammar'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const GrammarListScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPosFilterChips(WordProvider provider) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Icon(Icons.filter_list, size: 20, color: Colors.grey),
+            ),
+            ...provider.availablePosFilters.map((pos) {
+              final isSelected = provider.selectedPosFilters.contains(pos);
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: FilterChip(
+                  label: Text(
+                    pos,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isSelected ? Colors.white : Colors.grey.shade700,
+                    ),
+                  ),
+                  selected: isSelected,
+                  onSelected: (_) => provider.togglePosFilter(pos),
+                  selectedColor: _getPosColor(pos),
+                  backgroundColor: Colors.grey.shade200,
+                  checkmarkColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  visualDensity: VisualDensity.compact,
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getPosColor(String pos) {
+    switch (pos.toLowerCase()) {
+      case 'verb':
+        return Colors.blue;
+      case 'noun':
+        return Colors.green;
+      case 'adjective':
+        return Colors.orange;
+      case 'adverb':
+        return Colors.purple;
+      case 'preposition':
+        return Colors.teal;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildActiveFiltersBar(WordProvider provider) {
+    final filteredCount = provider.filteredWords.length;
+    final totalCount = provider.words.length;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      color: Colors.blue.shade50,
+      child: Row(
+        children: [
+          Icon(Icons.filter_alt, size: 18, color: Colors.blue.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Hiển thị $filteredCount / $totalCount từ',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.blue.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              provider.clearAllFilters();
+              _searchController.clear();
+              setState(() => _isSearching = false);
+            },
+            icon: const Icon(Icons.clear, size: 16),
+            label: const Text('Xóa bộ lọc'),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGroupedList(BuildContext context, WordProvider provider) {
-    final groupedWords = provider.wordsByGroup;
+    // Use filtered words instead of all words
+    final groupedWords = provider.filteredWordsByGroup;
     final sortedKeys = groupedWords.keys.toList()
       ..sort((a, b) {
         if (a == null) return 1; // Ungrouped at bottom
