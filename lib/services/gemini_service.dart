@@ -210,6 +210,88 @@ Rules:
     }
   }
 
+  /// Enriches a word with complete information (pronunciation, definitions, examples, etc.)
+  /// This is useful when a word was added in bulk and is missing detailed information.
+  Future<Word> enrichWord(Word existingWord) async {
+    final prompt =
+        '''
+Act as a Dictionary API.
+Task: Generate COMPLETE vocabulary data for the word: "${existingWord.word}"
+
+I already have this word in my vocabulary list but it's missing some information.
+Please provide ALL the following data, even if some already exists:
+
+Return JSON object (NOT array):
+{
+  "word": "${existingWord.word}",
+  "pos": ["noun", "verb"],
+  "verbs": [
+    {"id": 0, "type": "Past tense", "text": "..."},
+    {"id": 1, "type": "Past participle", "text": "..."},
+    {"id": 2, "type": "Present participle", "text": "..."}
+  ],
+  "pronunciation": [
+    {"pos": "noun", "lang": "us", "url": "", "pron": "/.../" },
+    {"pos": "noun", "lang": "uk", "url": "", "pron": "/.../" }
+  ],
+  "definition": [
+    {
+      "id": 0,
+      "pos": "noun",
+      "text": "English definition (academic)",
+      "shortTranslation": "Nghĩa ngắn, hay dùng (1-3 từ)",
+      "translation": "Nghĩa học thuật đầy đủ bằng tiếng Việt",
+      "example": [{"id": 0, "text": "Eng sentence.", "translation": "Câu tiếng Việt."}]
+    }
+  ]
+}
+
+Rules:
+- Include ALL parts of speech the word can be used as
+- Provide at least 1-2 examples per definition
+- Natural Vietnamese translations
+- shortTranslation: 1-3 từ đơn giản, hay dùng, dễ nhớ
+- translation: Nghĩa đầy đủ, chi tiết hơn
+- Verbs: include Past/Past Participle/Present Participle
+- Nouns: include Plural in verbs array if applicable
+- IDs start from 0
+''';
+
+    final content = [Content.text(prompt)];
+    final response = await _model.generateContent(content);
+
+    if (response.text == null) {
+      throw Exception('No response from Gemini');
+    }
+
+    try {
+      final decoded = jsonDecode(response.text!);
+      if (decoded is Map<String, dynamic>) {
+        final enrichedWord = Word.fromJson(decoded);
+        // Preserve SRS data and group from existing word
+        return enrichedWord.copyWith(
+          group: existingWord.group,
+          nextReviewDate: existingWord.nextReviewDate,
+          interval: existingWord.interval,
+          easeFactor: existingWord.easeFactor,
+          status: existingWord.status,
+          synonym: existingWord.synonym ?? enrichedWord.synonym,
+          synonymMeaningVi:
+              existingWord.synonymMeaningVi ?? enrichedWord.synonymMeaningVi,
+          antonym: existingWord.antonym ?? enrichedWord.antonym,
+          antonymMeaningVi:
+              existingWord.antonymMeaningVi ?? enrichedWord.antonymMeaningVi,
+        );
+      } else {
+        throw Exception('Unexpected JSON format: ${decoded.runtimeType}');
+      }
+    } catch (e) {
+      throw Exception(
+        'Failed to parse Gemini response: $e\nRaw response: ${response.text}',
+      );
+    }
+  }
+
   Future<List<Map<String, String>>> fetchMoreExamples(
     String word, {
     String? context,

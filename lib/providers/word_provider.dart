@@ -91,9 +91,11 @@ class WordProvider with ChangeNotifier {
     try {
       final List<Word> parsedWords = _parseBulkText(bulkText);
       if (parsedWords.isEmpty) {
-        throw Exception('Không tìm thấy từ nào để thêm. Hãy kiểm tra định dạng.\nĐịnh dạng đúng: Từ [Loại từ] /Phát âm/ Nghĩa');
+        throw Exception(
+          'Không tìm thấy từ nào để thêm. Hãy kiểm tra định dạng.\nĐịnh dạng đúng: Từ [Loại từ] /Phát âm/ Nghĩa',
+        );
       }
-      
+
       await _repository.addWords(parsedWords);
       // Stream will automatically push the update.
     } catch (e) {
@@ -106,20 +108,26 @@ class WordProvider with ChangeNotifier {
 
   /// Adds word pairs (synonym/antonym) in bulk from a formatted text string
   /// Format: "Empty (trống) -> Bare (trống trơn)"
-  Future<void> addWordPairsBulk(String bulkText, {bool isSynonym = true}) async {
+  Future<void> addWordPairsBulk(
+    String bulkText, {
+    bool isSynonym = true,
+  }) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final List<Word> parsedWords = _parseWordPairsText(bulkText, isSynonym: isSynonym);
+      final List<Word> parsedWords = _parseWordPairsText(
+        bulkText,
+        isSynonym: isSynonym,
+      );
       if (parsedWords.isEmpty) {
         throw Exception(
           'Không tìm thấy cặp từ nào để thêm. Hãy kiểm tra định dạng.\n'
-          'Định dạng đúng: Word1 (nghĩa1) -> Word2 (nghĩa2)'
+          'Định dạng đúng: Word1 (nghĩa1) -> Word2 (nghĩa2)',
         );
       }
-      
+
       await _repository.addWords(parsedWords);
       // Stream will automatically push the update.
     } catch (e) {
@@ -134,7 +142,7 @@ class WordProvider with ChangeNotifier {
   /// Returns a list of Word objects with synonym or antonym fields populated.
   List<Word> _parseWordPairsText(String text, {bool isSynonym = true}) {
     final List<Word> words = [];
-    
+
     // Normalize line-endings
     final normalizedText = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final lines = normalizedText
@@ -142,14 +150,14 @@ class WordProvider with ChangeNotifier {
         .map((l) => l.trim())
         .where((l) => l.isNotEmpty)
         .toList();
-    
+
     // Regex to parse: "Word (meaning) -> RelatedWord (relatedMeaning)"
     // Captures: 1=Word, 2=meaning, 3=RelatedWord, 4=relatedMeaning
     final pairRegex = RegExp(
       r'^([a-zA-Z][a-zA-Z\s\-]*?)\s*\(([^)]+)\)\s*->\s*([a-zA-Z][a-zA-Z\s\-]*?)\s*\(([^)]+)\)$',
       caseSensitive: false,
     );
-    
+
     for (final line in lines) {
       final match = pairRegex.firstMatch(line);
       if (match != null) {
@@ -157,22 +165,24 @@ class WordProvider with ChangeNotifier {
         final meaningVi = match.group(2)!.trim();
         final relatedWord = match.group(3)!.trim();
         final relatedMeaningVi = match.group(4)!.trim();
-        
+
         if (word.isNotEmpty && relatedWord.isNotEmpty) {
-          words.add(Word(
-            word: word,
-            meaningVi: meaningVi,
-            synonym: isSynonym ? relatedWord : null,
-            synonymMeaningVi: isSynonym ? relatedMeaningVi : null,
-            antonym: isSynonym ? null : relatedWord,
-            antonymMeaningVi: isSynonym ? null : relatedMeaningVi,
-            status: 0,
-            nextReviewDate: DateTime.now(),
-          ));
+          words.add(
+            Word(
+              word: word,
+              meaningVi: meaningVi,
+              synonym: isSynonym ? relatedWord : null,
+              synonymMeaningVi: isSynonym ? relatedMeaningVi : null,
+              antonym: isSynonym ? null : relatedWord,
+              antonymMeaningVi: isSynonym ? null : relatedMeaningVi,
+              status: 0,
+              nextReviewDate: DateTime.now(),
+            ),
+          );
         }
       }
     }
-    
+
     return words;
   }
 
@@ -207,31 +217,31 @@ class WordProvider with ChangeNotifier {
     for (int i = 0; i < allMatches.length; i++) {
       final m = allMatches[i];
 
-      final wordRaw  = m.group(1)!.trim();
-      final posStr   = m.group(2)!.trim();
-      final ipa      = m.group(3)!.trim();
+      final wordRaw = m.group(1)!.trim();
+      final posStr = m.group(2)!.trim();
+      final ipa = m.group(3)!.trim();
 
       // The meaning is everything after the IPA block up to the start of the
       // next entry (or end of string).  Because we slice by index there is no
       // chance of a trailing character leaking into the next word.
       final meaningStart = m.end;
-      final meaningEnd   = (i + 1 < allMatches.length)
+      final meaningEnd = (i + 1 < allMatches.length)
           ? allMatches[i + 1].start
           : normalizedText.length;
 
-      final meaning = normalizedText
-          .substring(meaningStart, meaningEnd)
-          .trim();
+      final meaning = normalizedText.substring(meaningStart, meaningEnd).trim();
 
       if (wordRaw.isNotEmpty && ipa.isNotEmpty) {
-        words.add(Word(
-          word: wordRaw,
-          pos: _parsePos(posStr),
-          ipa: ipa,
-          meaningVi: meaning,
-          status: 0,
-          nextReviewDate: DateTime.now(),
-        ));
+        words.add(
+          Word(
+            word: wordRaw,
+            pos: _parsePos(posStr),
+            ipa: ipa,
+            meaningVi: meaning,
+            status: 0,
+            nextReviewDate: DateTime.now(),
+          ),
+        );
       }
     }
 
@@ -248,14 +258,14 @@ class WordProvider with ChangeNotifier {
         final ipaMatch = RegExp(r'(/[^/]+/)').firstMatch(line);
         if (ipaMatch == null) continue;
 
-        final ipa      = ipaMatch.group(1)!;
+        final ipa = ipaMatch.group(1)!;
         final ipaIndex = line.indexOf(ipa);
 
         final beforeIpa = line.substring(0, ipaIndex).trim();
-        final afterIpa  = line.substring(ipaIndex + ipa.length).trim();
+        final afterIpa = line.substring(ipaIndex + ipa.length).trim();
 
         String wordPart = beforeIpa;
-        String posPart  = '';
+        String posPart = '';
 
         final posRegex = RegExp(
           r'(.*?)\s+((?:n\.|v\.|adj\.|adv\.|prep\.)+)$',
@@ -264,18 +274,20 @@ class WordProvider with ChangeNotifier {
         final pMatch = posRegex.firstMatch(beforeIpa);
         if (pMatch != null) {
           wordPart = pMatch.group(1)!.trim();
-          posPart  = pMatch.group(2)!.trim();
+          posPart = pMatch.group(2)!.trim();
         }
 
         if (wordPart.isNotEmpty) {
-          words.add(Word(
-            word: wordPart,
-            pos: _parsePos(posPart),
-            ipa: ipa,
-            meaningVi: afterIpa,
-            status: 0,
-            nextReviewDate: DateTime.now(),
-          ));
+          words.add(
+            Word(
+              word: wordPart,
+              pos: _parsePos(posPart),
+              ipa: ipa,
+              meaningVi: afterIpa,
+              status: 0,
+              nextReviewDate: DateTime.now(),
+            ),
+          );
         }
       }
     }
@@ -286,16 +298,28 @@ class WordProvider with ChangeNotifier {
   /// Helper to parse POS string into a list of normalized POS names
   List<String> _parsePos(String posStr) {
     final List<String> posList = [];
-    final cleanPos = posStr.replaceAll(',', ' ').replaceAll('.', ' ').toLowerCase();
-    final parts = cleanPos.split(' ').map((p) => p.trim()).where((p) => p.isNotEmpty);
-    
+    final cleanPos = posStr
+        .replaceAll(',', ' ')
+        .replaceAll('.', ' ')
+        .toLowerCase();
+    final parts = cleanPos
+        .split(' ')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty);
+
     for (var p in parts) {
-      if (p == 'n') posList.add('noun');
-      else if (p == 'v') posList.add('verb');
-      else if (p == 'adj') posList.add('adjective');
-      else if (p == 'adv') posList.add('adverb');
-      else if (p == 'prep') posList.add('preposition');
-      else if (p.length > 1) posList.add(p); // Add other POS if it's a word
+      if (p == 'n')
+        posList.add('noun');
+      else if (p == 'v')
+        posList.add('verb');
+      else if (p == 'adj')
+        posList.add('adjective');
+      else if (p == 'adv')
+        posList.add('adverb');
+      else if (p == 'prep')
+        posList.add('preposition');
+      else if (p.length > 1)
+        posList.add(p); // Add other POS if it's a word
     }
     return posList.toSet().toList();
   }
@@ -322,11 +346,14 @@ class WordProvider with ChangeNotifier {
 
   /// Adds more examples to a word (legacy support)
   Future<Word> addExamples(Word originalWord, {String? context}) async {
-    final examples = await _geminiService.fetchMoreExamples(originalWord.word, context: context);
+    final examples = await _geminiService.fetchMoreExamples(
+      originalWord.word,
+      context: context,
+    );
 
     final newExamplesEn = List<String>.from(originalWord.examplesEn);
     final newExamplesVi = List<String>.from(originalWord.examplesVi);
-    
+
     for (var ex in examples) {
       newExamplesEn.add(ex['text'] ?? '');
       newExamplesVi.add(ex['translation'] ?? '');
@@ -386,9 +413,11 @@ class WordProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final List<String> wordIds = _selectedWords.map((w) => w.english).toList();
+      final List<String> wordIds = _selectedWords
+          .map((w) => w.english)
+          .toList();
       await _repository.deleteWords(wordIds);
-      
+
       _selectedWords.clear();
       _isSelectionMode = false;
       // Stream will automatically push the update.
@@ -447,6 +476,28 @@ class WordProvider with ChangeNotifier {
   Future<void> addWordToGroup(Word word, String groupName) async {
     final updatedWord = word.copyWith(group: groupName);
     await _repository.updateWord(updatedWord);
+  }
+
+  /// Moves all selected words to an existing group
+  Future<void> moveSelectedWordsToGroup(String groupName) async {
+    if (_selectedWords.isEmpty) return;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      for (var word in _selectedWords) {
+        final updatedWord = word.copyWith(group: groupName);
+        await _repository.updateWord(updatedWord);
+      }
+      _selectedWords.clear();
+      _isSelectionMode = false;
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   /// Gets list of all existing group names (non-null)
@@ -561,7 +612,8 @@ class WordProvider with ChangeNotifier {
   List<Word> getWordsForReview() {
     final now = DateTime.now();
     return _words.where((word) {
-      final isDue = word.nextReviewDate == null ||
+      final isDue =
+          word.nextReviewDate == null ||
           word.nextReviewDate!.isBefore(now) ||
           word.nextReviewDate!.isAtSameMomentAs(now);
       final isNotMastered = (word.status ?? 0) < 3;

@@ -186,6 +186,46 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     );
   }
 
+  Future<void> _enrichWordInfo() async {
+    setState(() => _isLoading = true);
+    try {
+      final geminiService = GeminiService();
+      final enrichedWord = await geminiService.enrichWord(_word);
+
+      // Update the word in provider
+      final provider = Provider.of<WordProvider>(context, listen: false);
+      await provider.updateWord(enrichedWord);
+
+      // Reinitialize controllers with enriched data
+      for (var dc in _definitionControllers) {
+        dc.dispose();
+      }
+
+      setState(() {
+        _word = enrichedWord;
+        _initControllers();
+        _hasChanges = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã cập nhật đầy đủ thông tin từ vựng!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _saveChanges() async {
     final provider = Provider.of<WordProvider>(context, listen: false);
     final updatedWord = _buildUpdatedWord();
@@ -213,6 +253,11 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       appBar: AppBar(
         title: Text(_word.word),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_fix_high),
+            tooltip: 'Làm đầy thông tin',
+            onPressed: _isLoading ? null : _enrichWordInfo,
+          ),
           if (_hasChanges)
             IconButton(
               icon: const Icon(Icons.save, color: Colors.green),
@@ -831,7 +876,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
               const Spacer(),
               if (_word.group != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.blue.shade50,
                     borderRadius: BorderRadius.circular(12),
@@ -843,7 +891,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                       const SizedBox(width: 4),
                       Text(
                         _word.group!,
-                        style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                        ),
                       ),
                     ],
                   ),
@@ -882,7 +933,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                                   color: statusColors[index].withOpacity(0.4),
                                   blurRadius: 8,
                                   spreadRadius: 1,
-                                )
+                                ),
                               ]
                             : null,
                       ),
@@ -897,7 +948,9 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                       statusLabels[index],
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                         color: isSelected ? statusColors[index] : Colors.grey,
                       ),
                     ),

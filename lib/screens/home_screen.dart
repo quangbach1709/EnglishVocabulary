@@ -518,30 +518,43 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _showCreateGroupDialog(BuildContext context, WordProvider provider) {
-    final controller = TextEditingController();
-    showDialog(
+    final existingGroups = provider.existingGroups;
+
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create Group'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'Group Name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (controller.text.isNotEmpty) {
-                provider.createGroup(controller.text);
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => _GroupSelectionSheet(
+        existingGroups: existingGroups,
+        selectedCount: provider.selectedWords.length,
+        onSelectGroup: (groupName) async {
+          Navigator.pop(context);
+          await provider.moveSelectedWordsToGroup(groupName);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Đã di chuyển ${provider.selectedWords.length} từ vào "$groupName"',
+                ),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        },
+        onCreateGroup: (groupName) async {
+          Navigator.pop(context);
+          await provider.createGroup(groupName);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Đã tạo nhóm "$groupName"'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        },
       ),
     );
   }
@@ -843,6 +856,171 @@ class HomeScreen extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => GameScreen(words: wordsToReview)),
+    );
+  }
+}
+
+// ============================================
+// Group Selection Bottom Sheet Widget
+// ============================================
+
+class _GroupSelectionSheet extends StatefulWidget {
+  final List<String> existingGroups;
+  final int selectedCount;
+  final Function(String) onSelectGroup;
+  final Function(String) onCreateGroup;
+
+  const _GroupSelectionSheet({
+    required this.existingGroups,
+    required this.selectedCount,
+    required this.onSelectGroup,
+    required this.onCreateGroup,
+  });
+
+  @override
+  State<_GroupSelectionSheet> createState() => _GroupSelectionSheetState();
+}
+
+class _GroupSelectionSheetState extends State<_GroupSelectionSheet> {
+  bool _isCreatingNew = false;
+  final _newGroupController = TextEditingController();
+
+  @override
+  void dispose() {
+    _newGroupController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  const Icon(Icons.folder, color: Colors.blue),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Di chuyển ${widget.selectedCount} từ vào nhóm',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+
+            // Create new group section
+            if (_isCreatingNew) ...[
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _newGroupController,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          hintText: 'Tên nhóm mới',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                        onSubmitted: (value) {
+                          if (value.isNotEmpty) {
+                            widget.onCreateGroup(value);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        setState(() {
+                          _isCreatingNew = false;
+                          _newGroupController.clear();
+                        });
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.check, color: Colors.green),
+                      onPressed: () {
+                        if (_newGroupController.text.isNotEmpty) {
+                          widget.onCreateGroup(_newGroupController.text);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // Create new group button
+              ListTile(
+                leading: const Icon(Icons.add_circle, color: Colors.green),
+                title: const Text('Tạo nhóm mới'),
+                onTap: () {
+                  setState(() => _isCreatingNew = true);
+                },
+              ),
+            ],
+
+            if (widget.existingGroups.isNotEmpty) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 8.0,
+                ),
+                child: Text(
+                  'Hoặc chọn nhóm có sẵn:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              // Existing groups list
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: widget.existingGroups.length,
+                  itemBuilder: (context, index) {
+                    final groupName = widget.existingGroups[index];
+                    return ListTile(
+                      leading: const Icon(Icons.folder, color: Colors.blue),
+                      title: Text(groupName),
+                      trailing: const Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
+                      onTap: () => widget.onSelectGroup(groupName),
+                    );
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
     );
   }
 }
