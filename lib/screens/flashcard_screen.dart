@@ -81,13 +81,13 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
       case FlashcardMode.synonym:
         final synonym = word.synonym ?? '';
         final synonymMeaning = word.synonymMeaningVi ?? '';
-        return synonymMeaning.isNotEmpty 
+        return synonymMeaning.isNotEmpty
             ? '$synonym\n($synonymMeaning)'
             : synonym;
       case FlashcardMode.antonym:
         final antonym = word.antonym ?? '';
         final antonymMeaning = word.antonymMeaningVi ?? '';
-        return antonymMeaning.isNotEmpty 
+        return antonymMeaning.isNotEmpty
             ? '$antonym\n($antonymMeaning)'
             : antonym;
     }
@@ -178,11 +178,11 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                _currentMode == FlashcardMode.synonym 
-                    ? Icons.compare_arrows 
-                    : _currentMode == FlashcardMode.antonym 
-                        ? Icons.swap_horiz 
-                        : Icons.translate,
+                _currentMode == FlashcardMode.synonym
+                    ? Icons.compare_arrows
+                    : _currentMode == FlashcardMode.antonym
+                    ? Icons.swap_horiz
+                    : Icons.translate,
                 size: 64,
                 color: Colors.grey,
               ),
@@ -218,7 +218,7 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
             // Mode selector
             _buildModeSelector(),
             const SizedBox(height: 12),
-            
+
             // Progress indicator
             LinearProgressIndicator(
               value: (_currentIndex + 1) / _reviewWords.length,
@@ -346,10 +346,7 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
                   currentWord.meaningVi.isNotEmpty)
                 Text(
                   '(${currentWord.meaningVi})',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70,
-                  ),
+                  style: const TextStyle(fontSize: 16, color: Colors.white70),
                   textAlign: TextAlign.center,
                 ),
               if (_currentMode == FlashcardMode.meaning &&
@@ -404,7 +401,7 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
   Widget _buildCardBack() {
     final backContent = _getBackContent(currentWord);
     final showExamples = _currentMode == FlashcardMode.meaning;
-    
+
     return Card(
       elevation: 8,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -418,17 +415,14 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
             colors: _getBackGradientColors(),
           ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
+        child: Center(
           child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  _getBackIcon(),
-                  size: 40,
-                  color: Colors.white70,
-                ),
+                Icon(_getBackIcon(), size: 40, color: Colors.white70),
                 const SizedBox(height: 16),
                 Text(
                   backContent,
