@@ -7,8 +7,13 @@ import '../services/tts_service.dart';
 
 class GameScreen extends StatefulWidget {
   final List<Word> words;
+  final bool isDailySession;
 
-  const GameScreen({super.key, required this.words});
+  const GameScreen({
+    super.key,
+    required this.words,
+    this.isDailySession = false,
+  });
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -23,6 +28,9 @@ class _GameScreenState extends State<GameScreen> {
   bool _firstAttempt = true;
   final Random _random = Random();
 
+  int _questionsAnswered = 0;
+  final int _totalQuestions = 10; // Or widget.words.length
+
   @override
   void initState() {
     super.initState();
@@ -30,12 +38,19 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _nextQuestion() {
+    if (widget.isDailySession && _questionsAnswered >= widget.words.length) {
+      _showCompletionDialog();
+      return;
+    }
+
     setState(() {
       _showDetails = false;
       _isCorrect = null;
       _firstAttempt = true;
 
       // Select target word
+      // In daily session, we could cycle through all words.
+      // For now, keep it random but track count.
       _targetWord = widget.words[_random.nextInt(widget.words.length)];
 
       // Decide question type (50/50 chance)
@@ -79,6 +94,7 @@ class _GameScreenState extends State<GameScreen> {
         provider.updateWordSRS(_targetWord, 0); // Again
       }
       _firstAttempt = false;
+      _questionsAnswered++;
     }
 
     setState(() {
@@ -103,6 +119,7 @@ class _GameScreenState extends State<GameScreen> {
     // 2. Update SRS (Forgot)
     final provider = Provider.of<WordProvider>(context, listen: false);
     await provider.updateWordSRS(_targetWord, 0);
+    _questionsAnswered++;
 
     // 3. Auto-advance after 2 seconds
     Future.delayed(const Duration(seconds: 2), () {
@@ -110,6 +127,42 @@ class _GameScreenState extends State<GameScreen> {
         _nextQuestion();
       }
     });
+  }
+
+  void _showCompletionDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(
+          widget.isDailySession
+              ? '🎉 Daily Mission Completed! 🎉'
+              : '🎉 Game Complete!',
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.isDailySession)
+              const Icon(Icons.stars, color: Colors.yellow, size: 64),
+            const SizedBox(height: 16),
+            Text(
+              'Bạn đã hoàn thành bài tập trắc nghiệm với ${widget.words.length} từ.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Back to home
+            },
+            child: const Text('Xong'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _speak() async {
@@ -132,12 +185,25 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Game Mode')),
+      appBar: AppBar(
+        title: Text(
+          widget.isDailySession
+              ? 'Daily Quiz (${min(_questionsAnswered + 1, widget.words.length)}/${widget.words.length})'
+              : 'Game Mode',
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (widget.isDailySession)
+              LinearProgressIndicator(
+                value: _questionsAnswered / widget.words.length,
+                backgroundColor: Colors.grey[300],
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+              ),
+            const SizedBox(height: 20),
             Text(
               _isEnglishQuestion
                   ? 'Choose the meaning for:'
@@ -167,7 +233,7 @@ class _GameScreenState extends State<GameScreen> {
                   buttonColor = Colors.green; // Correct answer
                 } else if (_isCorrect == false &&
                     option == _targetWord.primaryShortMeaning) {
-                  // Highlight correct answer if wrong one was picked (optional logic, simplified here)
+                  // Highlight correct answer if wrong one was picked
                 }
               }
 
@@ -251,7 +317,11 @@ class _GameScreenState extends State<GameScreen> {
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Next Question'),
+                child: Text(
+                  _questionsAnswered >= widget.words.length
+                      ? 'Finish'
+                      : 'Next Question',
+                ),
               ),
             ],
           ],

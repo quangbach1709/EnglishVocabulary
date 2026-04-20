@@ -146,7 +146,7 @@ class Word {
   final List<String> examplesEn; // Legacy examples
   final List<String> examplesVi; // Legacy examples
 
-  String? group;
+  final String? group;
 
   // Synonym/Antonym fields for Word Pair flashcards
   final String? synonym; // e.g., "Bare" for word "Empty"
@@ -155,10 +155,10 @@ class Word {
   final String? antonymMeaningVi; // e.g., "đầy"
 
   // SRS (Spaced Repetition System) Fields
-  DateTime? nextReviewDate;
-  int interval;
-  double easeFactor;
-  int
+  final DateTime? nextReviewDate;
+  final int interval;
+  final double easeFactor;
+  final int
   status; // 0: New/Forgot (Red), 1: Hard (Orange), 2: Good (Yellow), 3: Easy (Light Green)
 
   Word({
@@ -433,7 +433,9 @@ class Word {
   /// Returns the lowercase English word (used as Document ID)
   String get english => word.toLowerCase();
 
-  /// Creates a copy of the Word with updated fields
+  /// Creates a copy of the Word with updated fields.
+  /// To clear a field, pass its value explicitly (e.g. group: null).
+  /// This version handles null correctly by checking if a field was provided.
   Word copyWith({
     String? word,
     List<String>? pos,
@@ -445,6 +447,7 @@ class Word {
     List<String>? examplesEn,
     List<String>? examplesVi,
     String? group,
+    bool clearGroup = false,
     String? synonym,
     String? synonymMeaningVi,
     String? antonym,
@@ -464,7 +467,7 @@ class Word {
       meaningVi: meaningVi ?? this.meaningVi,
       examplesEn: examplesEn ?? this.examplesEn,
       examplesVi: examplesVi ?? this.examplesVi,
-      group: group ?? this.group,
+      group: clearGroup ? null : (group ?? this.group),
       synonym: synonym ?? this.synonym,
       synonymMeaningVi: synonymMeaningVi ?? this.synonymMeaningVi,
       antonym: antonym ?? this.antonym,

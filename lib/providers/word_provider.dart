@@ -579,18 +579,7 @@ class WordProvider with ChangeNotifier {
 
   /// Removes a word from its group
   Future<void> removeWordFromGroup(Word word) async {
-    final updatedWord = Word(
-      word: word.word,
-      ipa: word.ipa,
-      meaningVi: word.meaningVi,
-      examplesEn: word.examplesEn,
-      examplesVi: word.examplesVi,
-      group: null, // Remove group
-      nextReviewDate: word.nextReviewDate,
-      interval: word.interval,
-      easeFactor: word.easeFactor,
-      status: word.status,
-    );
+    final updatedWord = word.copyWith(clearGroup: true);
     await _repository.updateWord(updatedWord);
   }
 
@@ -628,11 +617,43 @@ class WordProvider with ChangeNotifier {
       ..sort();
   }
 
-  /// Deletes all words in a group
+  /// Deletes a group by removing the group tag from all words in it.
+  /// The words themselves are NOT deleted from the database.
   Future<void> deleteGroup(String groupName) async {
-    final wordsInGroup = _words.where((w) => w.group == groupName).toList();
-    for (var word in wordsInGroup) {
-      await _repository.deleteWord(word.english);
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      // 1. Identify words in this group
+      final wordsInGroup = _words.where((w) => w.group == groupName).toList();
+      final List<Word> wordsToUpdate = [];
+
+      if (wordsInGroup.isNotEmpty) {
+        // 2. Prepare updated Word objects (force clear group)
+        for (var word in wordsInGroup) {
+          wordsToUpdate.add(word.copyWith(clearGroup: true));
+        }
+
+        // 3. Update locally first for instant UI response
+        for (int i = 0; i < _words.length; i++) {
+          if (_words[i].group == groupName) {
+            _words[i] = _words[i].copyWith(clearGroup: true);
+          }
+        }
+        notifyListeners();
+
+        // 4. Send batch update to Firestore
+        await _repository.updateWords(wordsToUpdate);
+      }
+
+      // 5. Clean up collapsed state
+      _collapsedGroups.remove(groupName);
+    } catch (e) {
+      _error = e.toString();
+      // On error, let the stream listener eventually correct the local state
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -756,6 +777,65 @@ class WordProvider with ChangeNotifier {
         return Colors.lightGreen.shade100; // Easy
       default:
         return Colors.transparent;
+    }
+  }
+
+  // ============================================
+  // Daily Study Session Logic
+  // ============================================
+
+  /// Count of words due for review (status > 0 and nextReviewDate <= now)
+  int get reviewCount {
+    final now = DateTime.now();
+    return _words.where((word) {
+      final isDue =
+          word.nextReviewDate != null &&
+          (word.nextReviewDate!.isBefore(now) ||
+              word.nextReviewDate!.isAtSameMomentAs(now));
+      final isReview = (word.status ?? 0) > 0;
+      return isDue && isReview;
+    }).length;
+  }
+
+  /// Count of new words (status == 0)
+  int get newWordsCount {
+    return _words.where((word) => (word.status ?? 0) == 0).length;
+  }
+
+  /// Updates the "Từ vựng hôm nay" group based on the generated daily queue.
+  /// Optimized using Firestore batch updates for high performance.
+  Future<void> updateDailyStudyGroup(List<Word> newQueue) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      const String dailyGroupName = "Từ vựng hôm nay";
+      final List<Word> wordsToUpdate = [];
+
+      // 1. Find all words currently in this group and prepare to clear them
+      final oldWordsInGroup =
+          _words.where((w) => w.group == dailyGroupName).toList();
+      for (var word in oldWordsInGroup) {
+        wordsToUpdate.add(word.copyWith(clearGroup: true));
+      }
+
+      // 2. Add new words to this group queue
+      for (var word in newQueue) {
+        wordsToUpdate.add(word.copyWith(group: dailyGroupName));
+      }
+
+      // 3. Perform batch update (much faster than individual updates)
+      if (wordsToUpdate.isNotEmpty) {
+        await _repository.updateWords(wordsToUpdate);
+      }
+
+      // 4. Ensure the group is expanded
+      _collapsedGroups.remove(dailyGroupName);
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 }

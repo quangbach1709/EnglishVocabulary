@@ -11,11 +11,13 @@ enum FlashcardMode { meaning, synonym, antonym }
 class FlashcardScreen extends StatefulWidget {
   final List<Word> words;
   final FlashcardMode initialMode;
+  final bool isDailySession;
 
   const FlashcardScreen({
     super.key,
     required this.words,
     this.initialMode = FlashcardMode.meaning,
+    this.isDailySession = false,
   });
 
   @override
@@ -129,28 +131,45 @@ class _FlashcardScreenState extends State<FlashcardScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('🎉 Review Complete!'),
-        content: Text('You reviewed ${_reviewWords.length} words.'),
+        title: Text(
+          widget.isDailySession
+              ? '🎉 Daily Mission Completed! 🎉'
+              : '🎉 Review Complete!',
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.isDailySession)
+              const Icon(Icons.stars, color: Colors.yellow, size: 64),
+            const SizedBox(height: 16),
+            Text(
+              'Bạn đã hoàn thành ${_reviewWords.length} từ trong hôm nay.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
               Navigator.pop(context); // Go back to home
             },
-            child: const Text('Done'),
+            child: const Text('Xong'),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              setState(() {
-                _currentIndex = 0;
-                _reviewWords.shuffle();
-                _isCardFlipped = false;
-                cardKey = GlobalKey<FlipCardState>();
-              });
-            },
-            child: const Text('Review Again'),
-          ),
+          if (!widget.isDailySession)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  _currentIndex = 0;
+                  _reviewWords.shuffle();
+                  _isCardFlipped = false;
+                  cardKey = GlobalKey<FlipCardState>();
+                });
+              },
+              child: const Text('Học lại'),
+            ),
         ],
       ),
     );

@@ -30,6 +30,11 @@ class WordRepository {
     await _firestoreService.updateWord(word);
   }
 
+  /// Updates multiple words in Firestore using batch operation
+  Future<void> updateWords(List<Word> words) async {
+    await _firestoreService.updateWords(words);
+  }
+
   /// Checks if a word exists
   Future<bool> wordExists(String englishWord) async {
     return await _firestoreService.wordExists(englishWord);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/word_provider.dart';
 import '../models/word.dart';
+import '../services/study_service.dart';
 import 'add_word_screen.dart';
 import 'learning_screen.dart';
 import 'word_detail_screen.dart';
@@ -44,12 +45,56 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final StudyService _studyService = StudyService();
   bool _isSearching = false;
+  bool _isGeneratingQueue = false;
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _startDailySession(BuildContext context) async {
+    setState(() => _isGeneratingQueue = true);
+    final provider = Provider.of<WordProvider>(context, listen: false);
+
+    try {
+      final dailyQueue = await _studyService.generateDailyQueue();
+
+      if (!mounted) return;
+
+      if (dailyQueue.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Hôm nay không có từ nào cần học!'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else {
+        // Update the dynamic daily group
+        await provider.updateDailyStudyGroup(dailyQueue);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã cập nhật nhóm "Từ vựng hôm nay"!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingQueue = false);
+      }
+    }
   }
 
   @override
@@ -63,6 +108,10 @@ class _HomeScreenState extends State<HomeScreen> {
           drawer: _buildDrawer(context),
           body: Column(
             children: [
+              // Daily Study Card
+              if (!provider.isLoading && provider.words.isNotEmpty)
+                _buildDailyStudyCard(context, provider),
+
               // POS Filter chips
               if (provider.availablePosFilters.isNotEmpty)
                 _buildPosFilterChips(provider),
@@ -70,7 +119,9 @@ class _HomeScreenState extends State<HomeScreen> {
               if (provider.hasActiveFilters) _buildActiveFiltersBar(provider),
               // Words list
               Expanded(
-                child: provider.words.isEmpty
+                child: provider.isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : provider.words.isEmpty
                     ? const Center(child: Text('No words yet. Add some!'))
                     : _buildGroupedList(context, provider),
               ),
@@ -87,6 +138,87 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildDailyStudyCard(BuildContext context, WordProvider provider) {
+    final reviewCount = provider.reviewCount;
+    final newCount = provider.newWordsCount;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      child: Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade700, Colors.blue.shade400],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.yellow, size: 28),
+                    SizedBox(width: 8),
+                    Text(
+                      'Nhiệm vụ hôm nay',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Bạn có $reviewCount từ cần ôn tập và $newCount từ mới.',
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _isGeneratingQueue
+                        ? null
+                        : () => _startDailySession(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.blue.shade700,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isGeneratingQueue
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text(
+                            'LÊN DANH SÁCH HỌC HÔM NAY',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

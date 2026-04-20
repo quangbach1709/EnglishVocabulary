@@ -39,19 +39,24 @@ class FirestoreService {
   // ============================================
 
   /// Adds a new word to Firestore
-  /// Uses word.english (lowercase) as the Document ID to prevent duplicates
   Future<void> addWord(Word word) async {
     try {
-      await _vocabularyCollection.doc(word.english).set(word.toMap());
+      await _vocabularyCollection
+          .doc(word.english)
+          .set(word.toMap())
+          .timeout(const Duration(seconds: 15));
     } catch (e) {
       throw FirestoreException('Failed to add word: $e');
     }
   }
 
-  /// Deletes a word from Firestore by its English word (Document ID)
+  /// Deletes a word from Firestore
   Future<void> deleteWord(String englishWord) async {
     try {
-      await _vocabularyCollection.doc(englishWord.toLowerCase()).delete();
+      await _vocabularyCollection
+          .doc(englishWord.toLowerCase())
+          .delete()
+          .timeout(const Duration(seconds: 15));
     } catch (e) {
       throw FirestoreException('Failed to delete word: $e');
     }
@@ -60,37 +65,39 @@ class FirestoreService {
   /// Fetches all words from the vocabulary collection
   Future<List<Word>> getAllWords() async {
     try {
-      final querySnapshot = await _vocabularyCollection.get();
+      final querySnapshot = await _vocabularyCollection
+          .get()
+          .timeout(const Duration(seconds: 15));
       return querySnapshot.docs.map((doc) => Word.fromMap(doc.data())).toList();
     } catch (e) {
       throw FirestoreException('Failed to fetch words: $e');
     }
   }
 
-  /// Fetches "Cram" words (Status 0 or 1: Again/Forgot or Hard)
+  /// Fetches "Cram" words (Status 0 or 1)
   Future<List<Word>> getCramWords() async {
     try {
       final querySnapshot = await _vocabularyCollection
           .where('status', whereIn: [0, 1])
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 15));
       return querySnapshot.docs.map((doc) => Word.fromMap(doc.data())).toList();
     } catch (e) {
       throw FirestoreException('Failed to fetch cram words: $e');
     }
   }
 
-  /// Fetches priority words for notifications (Status 0 or 1), limited to 14 words
-  /// Used by NotificationService to schedule varied daily reminders
+  /// Fetches priority words for notifications
   Future<List<Word>> getPriorityWords() async {
     try {
       final querySnapshot = await _vocabularyCollection
           .where('status', whereIn: [0, 1])
           .limit(14)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 15));
       final words = querySnapshot.docs
           .map((doc) => Word.fromMap(doc.data()))
           .toList();
-      // Shuffle for variety in notifications
       words.shuffle();
       return words;
     } catch (e) {
@@ -108,7 +115,7 @@ class FirestoreService {
       await _vocabularyCollection.doc(englishWord.toLowerCase()).update({
         'status': status,
         'next_review_date': Timestamp.fromDate(nextReview),
-      });
+      }).timeout(const Duration(seconds: 15));
     } catch (e) {
       throw FirestoreException('Failed to update word status: $e');
     }
@@ -118,13 +125,10 @@ class FirestoreService {
   Future<void> markWordAsForgot(Word word) async {
     try {
       final updatedWord = word.copyWith(
-        status: 0, // Red / Forgot
-        interval: 0, // Reset interval
-        nextReviewDate: DateTime.now(), // Review immediately
-        easeFactor: (word.easeFactor - 0.2).clamp(
-          1.3,
-          2.5,
-        ), // Reduce ease factor slightly
+        status: 0,
+        interval: 0,
+        nextReviewDate: DateTime.now(),
+        easeFactor: (word.easeFactor - 0.2).clamp(1.3, 2.5),
       );
       await updateWord(updatedWord);
     } catch (e) {
@@ -135,18 +139,22 @@ class FirestoreService {
   /// Updates a word completely
   Future<void> updateWord(Word word) async {
     try {
-      await _vocabularyCollection.doc(word.english).update(word.toMap());
+      await _vocabularyCollection
+          .doc(word.english)
+          .update(word.toMap())
+          .timeout(const Duration(seconds: 15));
     } catch (e) {
       throw FirestoreException('Failed to update word: $e');
     }
   }
 
-  /// Gets a single word by its English word (Document ID)
+  /// Gets a single word
   Future<Word?> getWord(String englishWord) async {
     try {
       final docSnapshot = await _vocabularyCollection
           .doc(englishWord.toLowerCase())
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 15));
       if (docSnapshot.exists && docSnapshot.data() != null) {
         return Word.fromMap(docSnapshot.data()!);
       }
@@ -156,19 +164,20 @@ class FirestoreService {
     }
   }
 
-  /// Checks if a word exists in Firestore
+  /// Checks if a word exists
   Future<bool> wordExists(String englishWord) async {
     try {
       final docSnapshot = await _vocabularyCollection
           .doc(englishWord.toLowerCase())
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 10));
       return docSnapshot.exists;
     } catch (e) {
       throw FirestoreException('Failed to check word existence: $e');
     }
   }
 
-  /// Gets a stream of all words (for real-time updates)
+  /// Gets a stream of all words
   Stream<List<Word>> wordsStream() {
     return _vocabularyCollection.snapshots().map(
       (snapshot) =>
@@ -176,27 +185,50 @@ class FirestoreService {
     );
   }
 
-  /// Batch add multiple words
+  /// Batch add multiple words with timeout
   Future<void> addWords(List<Word> words) async {
     try {
       final batch = _firestore.batch();
       for (final word in words) {
         batch.set(_vocabularyCollection.doc(word.english), word.toMap());
       }
-      await batch.commit();
+      await batch.commit().timeout(
+            const Duration(seconds: 20),
+            onTimeout: () => throw FirestoreException('Thời gian gửi dữ liệu quá lâu. Vui lòng kiểm tra mạng!'),
+          );
     } catch (e) {
-      throw FirestoreException('Failed to add words: $e');
+      throw FirestoreException('Lỗi thêm hàng loạt: $e');
     }
   }
 
-  /// Batch delete multiple words
+  /// Batch update multiple words with timeout
+  Future<void> updateWords(List<Word> words) async {
+    try {
+      final batch = _firestore.batch();
+      for (final word in words) {
+        batch.set(
+          _vocabularyCollection.doc(word.english),
+          word.toMap(),
+          SetOptions(merge: true),
+        );
+      }
+      await batch.commit().timeout(
+            const Duration(seconds: 20),
+            onTimeout: () => throw FirestoreException('Kết nối Firestore bị quá hạn. Vui lòng kiểm tra mạng!'),
+          );
+    } catch (e) {
+      throw FirestoreException('Lỗi cập nhật hàng loạt: $e');
+    }
+  }
+
+  /// Batch delete multiple words with timeout
   Future<void> deleteWords(List<String> englishWords) async {
     try {
       final batch = _firestore.batch();
       for (final englishWord in englishWords) {
         batch.delete(_vocabularyCollection.doc(englishWord.toLowerCase()));
       }
-      await batch.commit();
+      await batch.commit().timeout(const Duration(seconds: 20));
     } catch (e) {
       throw FirestoreException('Failed to delete words: $e');
     }
@@ -210,7 +242,7 @@ class FirestoreService {
       for (final doc in querySnapshot.docs) {
         batch.delete(doc.reference);
       }
-      await batch.commit();
+      await batch.commit().timeout(const Duration(seconds: 30));
     } catch (e) {
       throw FirestoreException('Failed to delete all words: $e');
     }
@@ -220,14 +252,13 @@ class FirestoreService {
   // Grammar Methods
   // ============================================
 
-  /// Saves a grammar topic to Firestore (Create or Update)
-  /// Uses topic.id (UUID) as the Document ID to ensure uniqueness
+  /// Saves a grammar topic
   Future<void> saveGrammarTopic(GrammarTopic topic) async {
     try {
-      // Use set to create or overwrite. merge: true is optional if we always send full object
       await _grammarCollection
           .doc(topic.id)
-          .set(topic.toMap(), SetOptions(merge: true));
+          .set(topic.toMap(), SetOptions(merge: true))
+          .timeout(const Duration(seconds: 15));
     } catch (e) {
       throw FirestoreException('Failed to save grammar topic: $e');
     }
@@ -236,7 +267,9 @@ class FirestoreService {
   /// Fetches all grammar topics
   Future<List<GrammarTopic>> getAllGrammarTopics() async {
     try {
-      final querySnapshot = await _grammarCollection.get();
+      final querySnapshot = await _grammarCollection
+          .get()
+          .timeout(const Duration(seconds: 15));
       return querySnapshot.docs
           .map((doc) => GrammarTopic.fromMap(doc.data()))
           .toList();
@@ -248,7 +281,10 @@ class FirestoreService {
   /// Deletes a grammar topic by ID
   Future<void> deleteGrammarTopic(String topicId) async {
     try {
-      await _grammarCollection.doc(topicId).delete();
+      await _grammarCollection
+          .doc(topicId)
+          .delete()
+          .timeout(const Duration(seconds: 15));
     } catch (e) {
       throw FirestoreException('Failed to delete grammar topic: $e');
     }
@@ -258,19 +294,15 @@ class FirestoreService {
   // User Settings Methods
   // ============================================
 
-  /// Document reference for user settings
   DocumentReference<Map<String, dynamic>> get _settingsDoc =>
       _firestore.collection('users').doc(_userId);
 
-  /// Fetch user settings from Firestore
-  /// Returns a Map with keys: apiKey, modelName, speechRate, ttsLanguage
   Future<Map<String, dynamic>> fetchUserSettings() async {
     try {
-      final doc = await _settingsDoc.get();
+      final doc = await _settingsDoc.get().timeout(const Duration(seconds: 10));
       if (doc.exists && doc.data() != null) {
         return doc.data()!;
       }
-      // Return defaults if no settings exist
       return {
         'apiKey': '',
         'modelName': 'gemini-1.5-flash',
@@ -283,26 +315,27 @@ class FirestoreService {
     }
   }
 
-  /// Save user settings to Firestore (merge to preserve other fields)
   Future<void> saveUserSettings(Map<String, dynamic> settings) async {
     try {
-      await _settingsDoc.set(settings, SetOptions(merge: true));
+      await _settingsDoc
+          .set(settings, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 15));
     } catch (e) {
       throw FirestoreException('Failed to save user settings: $e');
     }
   }
 
-  /// Update a single setting field
   Future<void> updateSetting(String key, dynamic value) async {
     try {
-      await _settingsDoc.set({key: value}, SetOptions(merge: true));
+      await _settingsDoc
+          .set({key: value}, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
       throw FirestoreException('Failed to update setting: $e');
     }
   }
 }
 
-/// Custom exception for Firestore operations
 class FirestoreException implements Exception {
   final String message;
   FirestoreException(this.message);

@@ -7,8 +7,14 @@ import '../services/tts_service.dart';
 class LearningScreen extends StatefulWidget {
   final Word? word; // For single word learning
   final List<Word>? words; // For review mode
+  final bool isDailySession;
 
-  const LearningScreen({super.key, this.word, this.words});
+  const LearningScreen({
+    super.key,
+    this.word,
+    this.words,
+    this.isDailySession = false,
+  });
 
   @override
   State<LearningScreen> createState() => _LearningScreenState();
@@ -50,8 +56,8 @@ class _LearningScreenState extends State<LearningScreen> {
   void _checkAnswer() {
     if (_showDetails) return; // Prevent double check
 
-    final bool correct = _controller.text.trim().toLowerCase() ==
-        currentWord.word.toLowerCase();
+    final bool correct =
+        _controller.text.trim().toLowerCase() == currentWord.word.toLowerCase();
 
     if (_firstAttempt) {
       final provider = Provider.of<WordProvider>(context, listen: false);
@@ -120,28 +126,45 @@ class _LearningScreenState extends State<LearningScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('🎉 Session Complete!'),
-        content: Text('You practiced ${_sessionWords.length} words.'),
+        title: Text(
+          widget.isDailySession
+              ? '🎉 Daily Mission Completed! 🎉'
+              : '🎉 Session Complete!',
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.isDailySession)
+              const Icon(Icons.stars, color: Colors.yellow, size: 64),
+            const SizedBox(height: 16),
+            Text(
+              'Bạn đã hoàn thành ${_sessionWords.length} từ trong hôm nay.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
               Navigator.pop(context); // Back to home
             },
-            child: const Text('Back to Home'),
+            child: const Text('Xong'),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              setState(() {
-                _currentIndex = 0;
-                _resetState();
-                // Optional: shuffle again for review
-                // _sessionWords.shuffle();
-              });
-            },
-            child: const Text('Practice Again'),
-          ),
+          if (!widget.isDailySession)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  _currentIndex = 0;
+                  _resetState();
+                  // Optional: shuffle again for review
+                  // _sessionWords.shuffle();
+                });
+              },
+              child: const Text('Học lại'),
+            ),
         ],
       ),
     );
