@@ -108,10 +108,6 @@ class _HomeScreenState extends State<HomeScreen> {
           drawer: _buildDrawer(context),
           body: Column(
             children: [
-              // Daily Study Card
-              if (!provider.isLoading && provider.words.isNotEmpty)
-                _buildDailyStudyCard(context, provider),
-
               // POS Filter chips
               if (provider.availablePosFilters.isNotEmpty)
                 _buildPosFilterChips(provider),
@@ -127,98 +123,154 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AddWordScreen()),
-              );
-            },
-            child: const Icon(Icons.add),
+          floatingActionButton: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // Daily task button
+              if (!provider.isLoading && provider.words.isNotEmpty)
+                FloatingActionButton(
+                  heroTag: 'dailyTask',
+                  onPressed: () => _showDailyTaskDialog(context, provider),
+                  backgroundColor: Colors.blue.shade700,
+                  foregroundColor: Colors.white,
+                  child: const Icon(Icons.school),
+                ),
+              const SizedBox(height: 16),
+              // Add word button
+              FloatingActionButton(
+                heroTag: 'addWord',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AddWordScreen(),
+                    ),
+                  );
+                },
+                child: const Icon(Icons.add),
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _buildDailyStudyCard(BuildContext context, WordProvider provider) {
-    final reviewCount = provider.reviewCount;
-    final newCount = provider.newWordsCount;
+  void _showDailyTaskDialog(BuildContext context, WordProvider provider) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final reviewCount = provider.reviewCount;
+            final newCount = provider.newWordsCount;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              colors: [Colors.blue.shade700, Colors.blue.shade400],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.auto_awesome, color: Colors.yellow, size: 28),
-                    SizedBox(width: 8),
-                    Text(
-                      'Nhiệm vụ hôm nay',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Bạn có $reviewCount từ cần ôn tập và $newCount từ mới.',
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isGeneratingQueue
-                        ? null
-                        : () => _startDailySession(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.blue.shade700,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _isGeneratingQueue
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text(
-                            'LÊN DANH SÁCH HỌC HÔM NAY',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  gradient: LinearGradient(
+                    colors: [Colors.blue.shade800, Colors.blue.shade500],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
                 ),
-              ],
-            ),
-          ),
-        ),
-      ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                color: Colors.yellow,
+                                size: 28,
+                              ),
+                              SizedBox(width: 12),
+                              Text(
+                                'Nhiệm vụ hôm nay',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white70),
+                            onPressed: () => Navigator.pop(dialogContext),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Bạn có $reviewCount từ cần ôn tập và $newCount từ mới cần học.',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton(
+                          onPressed: _isGeneratingQueue
+                              ? null
+                              : () async {
+                                  // Show loading in dialog
+                                  setDialogState(() {});
+                                  await _startDailySession(context);
+                                  // Close dialog on success
+                                  if (mounted) {
+                                    Navigator.pop(dialogContext);
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.blue.shade800,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: _isGeneratingQueue
+                              ? SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                    color: Colors.blue.shade800,
+                                  ),
+                                )
+                              : const Text(
+                                  'LÊN DANH SÁCH HỌC HÔM NAY',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -234,29 +286,43 @@ class _HomeScreenState extends State<HomeScreen> {
           provider.clearSearch();
         },
       ),
-      title: TextField(
-        controller: _searchController,
-        autofocus: true,
-        decoration: InputDecoration(
-          hintText: 'Tìm từ hoặc nghĩa...',
-          border: InputBorder.none,
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear, color: Colors.white),
-                  onPressed: () {
-                    _searchController.clear();
-                    provider.clearSearch();
-                  },
-                )
-              : null,
+      title: Container(
+        height: 45,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
         ),
-        style: const TextStyle(color: Colors.white, fontSize: 18),
-        onChanged: (value) {
-          provider.setSearchQuery(value);
-          setState(() {}); // Update clear button visibility
-        },
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: TextField(
+          controller: _searchController,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Tìm từ hoặc nghĩa...',
+            border: InputBorder.none,
+            hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 16),
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 20),
+                    padding: EdgeInsets.zero,
+                    onPressed: () {
+                      _searchController.clear();
+                      provider.clearSearch();
+                      setState(() {});
+                    },
+                  )
+                : null,
+          ),
+          style: const TextStyle(color: Colors.black87, fontSize: 16),
+          onChanged: (value) {
+            provider.setSearchQuery(value);
+            setState(() {}); // Cập nhật hiển thị nút xóa
+          },
+        ),
       ),
+      backgroundColor: Colors.white,
+      elevation: 2,
     );
   }
 
