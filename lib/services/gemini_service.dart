@@ -27,21 +27,24 @@ Configuration:
 - Format: Fill-in-the-blank sentences.
 - Output: JSON only.
 
-Rules for "parts":
+Rules for "parts" and "correct_answers":
 1. DO NOT reveal the grammar topic name in the sentence.
-2. If the question requires conjugating a verb, place the base verb in parentheses as the start of the second part.
-   - Bad: parts: ["When I", "you tomorrow."]
-   - Good: parts: ["When I", "(see) you tomorrow."]
-   - Good: parts: ["She", "(not/go) to school yesterday."]
+2. If the question requires conjugating a verb, place the base verb in parentheses as the start of the following part.
+   - Example: parts: ["If I", "(be) you, I would", "(go) there."]
+3. Support MULTIPLE blanks for complex topics (e.g., Conditionals, Passive Voice with two verbs, etc.).
+   - If there are N elements in "parts", there must be exactly N-1 elements in "correct_answers".
+   - Example (Conditional Type 2):
+     parts: ["If he", "(study) harder, he", "(pass) the exam."]
+     correct_answers: ["studied", "would pass"]
 
 JSON Schema:
 {
   "exercises": [
     {
       "topic_source": "Name of the topic this question belongs to",
-      "parts": ["Part before blank", "Part after blank"], 
-      "correct_answer": "answer",
-      "hint": "Hint in Vietnamese (e.g., V-ed form of 'go')"
+      "parts": ["Part 1", "Part 2", "Part 3"], 
+      "correct_answers": ["answer1", "answer2"],
+      "hint": "Brief hint in Vietnamese"
     }
   ]
 }

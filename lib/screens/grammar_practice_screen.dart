@@ -16,18 +16,66 @@ class _GrammarPracticeScreenState extends State<GrammarPracticeScreen> {
   bool _isChecked = false;
   bool _isCorrect = false;
   bool _showHint = false;
-  final TextEditingController _controller = TextEditingController();
+  
+  // List of controllers for multiple blanks
+  List<TextEditingController> _controllers = [];
 
   GrammarExercise get currentExercise => widget.exercises[_currentIndex];
 
+  @override
+  void initState() {
+    super.initState();
+    _initControllers();
+  }
+
+  void _initControllers() {
+    // Clean up old controllers
+    for (var controller in _controllers) {
+      controller.dispose();
+    }
+    
+    // Each blank is between two parts. N parts means N-1 blanks.
+    int blankCount = currentExercise.parts.length - 1;
+    if (blankCount < 1) blankCount = 1; // Fallback for safety
+
+    _controllers = List.generate(blankCount, (_) => TextEditingController());
+  }
+
+  @override
+  void dispose() {
+    for (var controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
   void _checkAnswer() {
-    if (_controller.text.trim().isEmpty) return;
+    bool allFilled = true;
+    for (var controller in _controllers) {
+      if (controller.text.trim().isEmpty) {
+        allFilled = false;
+        break;
+      }
+    }
+    if (!allFilled) return;
+
+    bool allCorrect = true;
+    for (int i = 0; i < _controllers.length; i++) {
+      String userAnswer = _controllers[i].text.trim().toLowerCase();
+      String correctAnswer = "";
+      if (i < currentExercise.correctAnswers.length) {
+        correctAnswer = currentExercise.correctAnswers[i].toLowerCase();
+      }
+
+      if (userAnswer != correctAnswer) {
+        allCorrect = false;
+        break;
+      }
+    }
 
     setState(() {
       _isChecked = true;
-      _isCorrect =
-          _controller.text.trim().toLowerCase() ==
-          currentExercise.correctAnswer.toLowerCase();
+      _isCorrect = allCorrect;
       if (_isCorrect) {
         _score++;
       }
@@ -41,7 +89,7 @@ class _GrammarPracticeScreenState extends State<GrammarPracticeScreen> {
         _isChecked = false;
         _isCorrect = false;
         _showHint = false;
-        _controller.clear();
+        _initControllers();
       });
     } else {
       _showCompletionDialog();
@@ -115,43 +163,9 @@ class _GrammarPracticeScreenState extends State<GrammarPracticeScreen> {
                     Wrap(
                       alignment: WrapAlignment.center,
                       crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (currentExercise.parts.isNotEmpty)
-                          Text(
-                            currentExercise.parts[0],
-                            style: const TextStyle(fontSize: 18),
-                          ),
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          width: 100,
-                          child: TextField(
-                            controller: _controller,
-                            enabled: !_isChecked,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: _isChecked
-                                  ? (_isCorrect ? Colors.green : Colors.red)
-                                  : Colors.black,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
-                                vertical: 4,
-                                horizontal: 4,
-                              ),
-                            ),
-                            onSubmitted: (_) => _checkAnswer(),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        if (currentExercise.parts.length > 1)
-                          Text(
-                            currentExercise.parts[1],
-                            style: const TextStyle(fontSize: 18),
-                          ),
-                      ],
+                      spacing: 8,
+                      runSpacing: 12,
+                      children: _buildQuestionWidgets(),
                     ),
                   ],
                 ),
@@ -186,6 +200,7 @@ class _GrammarPracticeScreenState extends State<GrammarPracticeScreen> {
                       const SizedBox(height: 4),
                       Text(
                         'Correct answer: ${currentExercise.correctAnswer}',
+                        textAlign: TextAlign.center,
                         style: const TextStyle(color: Colors.red),
                       ),
                     ],
@@ -206,7 +221,6 @@ class _GrammarPracticeScreenState extends State<GrammarPracticeScreen> {
                     const Icon(Icons.lightbulb, color: Colors.amber),
                     const SizedBox(width: 8),
                     Expanded(
-                      // Avoid overflow
                       child: Text(
                         'Hint: ${currentExercise.hint}',
                         style: const TextStyle(color: Colors.amber),
@@ -249,5 +263,51 @@ class _GrammarPracticeScreenState extends State<GrammarPracticeScreen> {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildQuestionWidgets() {
+    List<Widget> widgets = [];
+    
+    for (int i = 0; i < currentExercise.parts.length; i++) {
+      widgets.add(
+        Text(
+          currentExercise.parts[i],
+          style: const TextStyle(fontSize: 18),
+        ),
+      );
+
+      if (i < currentExercise.parts.length - 1) {
+        int controllerIndex = i;
+        if (controllerIndex < _controllers.length) {
+          widgets.add(
+            SizedBox(
+              width: 120,
+              child: TextField(
+                controller: _controllers[controllerIndex],
+                enabled: !_isChecked,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  color: _isChecked
+                      ? (_isCorrect ? Colors.green : Colors.red)
+                      : Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 4,
+                  ),
+                ),
+                onSubmitted: (_) => _checkAnswer(),
+              ),
+            ),
+          );
+        }
+      }
+    }
+    
+    return widgets;
   }
 }
